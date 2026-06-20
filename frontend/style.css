@@ -1,0 +1,118 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #ffffff;
+    color: #212529;
+    min-height: 100vh;
+}
+
+/* Neat layout panels instead of glass panels */
+.glass-panel, .card-premium {
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.glass-nav {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+}
+
+/* Custom form inputs - clean, white, minimal */
+.form-control-premium {
+    background-color: #ffffff !important;
+    border: 1px solid #ced4da !important;
+    color: #212529 !important;
+    border-radius: 4px !important;
+    padding: 8px 12px !important;
+}
+
+.form-control-premium:focus {
+    border-color: #86b7fe !important;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25) !important;
+    outline: none !important;
+}
+
+.form-select-premium {
+    composes: form-control-premium;
+    background-color: #ffffff !important;
+    border: 1px solid #ced4da !important;
+    color: #212529 !important;
+    border-radius: 4px !important;
+    padding: 8px 12px !important;
+}
+
+/* Override premium buttons to standard clean bootstrap styles */
+.btn-premium-primary {
+    background: #0d6efd !important;
+    border: 1px solid #0d6efd !important;
+    color: #ffffff !important;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: 4px;
+    box-shadow: none !important;
+    transform: none !important;
+    transition: none !important;
+}
+
+.btn-premium-primary:hover {
+    background: #0b5ed7 !important;
+    border-color: #0a58ca !important;
+    filter: none !important;
+}
+
+.btn-premium-secondary {
+    background: #f8f9fa !important;
+    border: 1px solid #dee2e6 !important;
+    color: #212529 !important;
+    padding: 8px 16px;
+    border-radius: 4px;
+    box-shadow: none !important;
+    transform: none !important;
+    transition: none !important;
+}
+
+.btn-premium-secondary:hover {
+    background: #e2e6ea !important;
+    border-color: #dae0e5 !important;
+    color: #212529 !important;
+}
+
+/* Simple Chip/Badge tags */
+.badge-custom {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    display: inline-block;
+}
+
+.badge-pending {
+    background-color: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeeba;
+}
+
+.badge-approved {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.badge-rejected {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.fade-in-up {
+    transform: none !important;
+    animation: none !important;
+}
+
+.navbar-brand span {
+    background: none !important;
+    color: #212529 !important;
+    -webkit-text-fill-color: initial !important;
+}

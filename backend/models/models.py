@@ -15,9 +15,6 @@ class User(db.Model):
     company = db.relationship('Company', backref='user', lazy=True, uselist=False, cascade='all, delete-orphan')
     student = db.relationship('Student', backref='user', lazy=True, uselist=False, cascade='all, delete-orphan')
 
-    def __init__(self, **kwargs):
-        super(User, self).__init__(**kwargs)
-
 class Company(db.Model):
     __tablename__ = 'companies'
     id = db.Column(db.Integer, primary_key=True)
