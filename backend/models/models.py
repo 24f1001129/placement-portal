@@ -120,8 +120,8 @@ class Application(db.Model):
     position_id = db.Column(db.Integer, db.ForeignKey('positions.id', ondelete='CASCADE'), nullable=False)
     applied_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
     status = db.Column(db.String(16), nullable=False, default='DRAFT')
+    feedback = db.Column(db.String(255), nullable=True)
 
-    
 
 class Placement(db.Model):
     __tablename__ = 'placements'

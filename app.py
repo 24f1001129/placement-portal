@@ -15,9 +15,10 @@ def create_app():
         return app.send_static_file('index.html')
 
 
-    from backend.routes import auth_bp, admin_bp
+    from backend.routes import auth_bp, admin_bp, company_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(company_bp)
 
     with app.app_context():
         

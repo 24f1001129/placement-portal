@@ -3,6 +3,7 @@ import Login from './components/Login.js';
 import RegisterStudent from './components/RegisterStudent.js';
 import RegisterCompany from './components/RegisterCompany.js';
 import AdminDashboard from './components/AdminDashboard.js';
+import CompanyDashboard from './components/CompanyDashboard.js';
 
 const { createApp } = Vue;
 
@@ -12,7 +13,8 @@ const app = createApp({
     Login,
     RegisterStudent,
     RegisterCompany,
-    AdminDashboard
+    AdminDashboard,
+    CompanyDashboard
   },
   data() {
     return {
@@ -147,12 +149,8 @@ const app = createApp({
           <div class="badge bg-success d-inline-block my-2" style="max-width: fit-content;">Authenticated Student</div>
         </div>
 
-        <!-- Protected Company Dashboard (Placeholder) -->
-        <div v-else-if="currentRoute.startsWith('/company')" class="card p-4 border rounded">
-          <h2 class="fw-bold">Company Dashboard</h2>
-          <p class="text-muted">Recruitment Hub: {{ user?.name }}</p>
-          <div class="badge bg-success d-inline-block my-2" style="max-width: fit-content;">Verified Recruiter</div>
-        </div>
+        <!-- Protected Company Dashboard -->
+        <CompanyDashboard v-else-if="currentRoute.startsWith('/company')" :user="user" :current-route="currentRoute" @navigate="navigate" />
 
         <!-- Protected Admin Dashboard -->
         <AdminDashboard v-else-if="currentRoute.startsWith('/admin')" :user="user" @navigate="navigate" />
