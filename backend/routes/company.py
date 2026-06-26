@@ -380,3 +380,114 @@ HR Contact: {company.hr_contact}
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': f'Failed to select candidate: {str(e)}'}), 500
+
+
+@company_bp.route('/drives/<int:drive_id>', methods=['PUT'])
+@company_required
+def edit_drive(drive_id):
+    company = Company.query.filter_by(user_id=session.get('user_id')).first()
+    drive = Drive.query.get(drive_id)
+    if not drive:
+        return jsonify({'error': 'Drive not found.'}), 404
+        
+    if drive.company_id != company.id:
+        return jsonify({'error': 'Unauthorized to edit this drive.'}), 403
+        
+    if drive.status != 'PENDING':
+        return jsonify({'error': 'Approved or closed drives cannot be edited.'}), 400
+        
+    data = request.get_json() or {}
+    drive_name = data.get('drive_name')
+    description = data.get('description')
+    deadline_str = data.get('deadline')
+    eligible_year = data.get('eligible_year')
+    positions_data = data.get('positions', [])
+
+    if not drive_name or not description or not deadline_str or not eligible_year:
+        return jsonify({'error': 'Missing required fields for the drive.'}), 400
+
+    if not positions_data:
+        return jsonify({'error': 'A placement drive must contain at least one job position.'}), 400
+
+    try:
+        try:
+            deadline = datetime.strptime(deadline_str, '%Y-%m-%d %H:%M')
+        except ValueError:
+            try:
+                deadline = datetime.fromisoformat(deadline_str)
+            except ValueError:
+                return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD HH:MM.'}), 400
+                
+        tz = pytz.timezone('Asia/Kolkata')
+        if deadline.tzinfo is None:
+            deadline = tz.localize(deadline)
+            
+        drive.drive_name = drive_name
+        drive.description = description
+        drive.deadline = deadline
+        drive.eligible_year = int(eligible_year)
+        
+        # Delete existing positions and re-add them
+        for pos in list(drive.positions):
+            db.session.delete(pos)
+            
+        for p_data in positions_data:
+            pos_name = p_data.get('position_name')
+            pos_desc = p_data.get('description')
+            min_cgpa = p_data.get('min_cgpa')
+            branches = p_data.get('branches')
+            salary = p_data.get('salary')
+            skills = p_data.get('skills')
+            location = p_data.get('location')
+            mode = p_data.get('mode')
+            
+            if not pos_name or not pos_desc or min_cgpa is None or not branches or salary is None or not skills or not location or not mode:
+                db.session.rollback()
+                return jsonify({'error': 'All job position fields are required.'}), 400
+                
+            new_position = Position(
+                drive=drive,
+                position_name=pos_name,
+                description=pos_desc,
+                min_cgpa=float(min_cgpa),
+                branches=branches,
+                salary=int(salary),
+                skills=skills,
+                location=location,
+                mode=mode
+            )
+            db.session.add(new_position)
+            
+        db.session.commit()
+        return jsonify({'message': 'Placement drive and job positions updated successfully.', 'drive_id': drive.id}), 200
+        
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Failed to update drive. Check your inputs.'}), 500
+
+
+@company_bp.route('/drives/<int:drive_id>', methods=['DELETE'])
+@company_required
+def delete_drive(drive_id):
+    company = Company.query.filter_by(user_id=session.get('user_id')).first()
+    drive = Drive.query.get(drive_id)
+    if not drive:
+        return jsonify({'error': 'Drive not found.'}), 404
+        
+    if drive.company_id != company.id:
+        return jsonify({'error': 'Unauthorized to delete this drive.'}), 403
+        
+    if drive.status != 'PENDING':
+        return jsonify({'error': 'Approved or closed drives cannot be deleted.'}), 400
+        
+    try:
+        db.session.delete(drive)
+        db.session.commit()
+        return jsonify({'message': 'Placement drive deleted successfully.'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Failed to delete placement drive.'}), 500
+

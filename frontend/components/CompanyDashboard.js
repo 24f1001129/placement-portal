@@ -12,18 +12,11 @@ export default {
   },
   data() {
     return {
-      activeTab: 'overview', // overview, profile, drives, applicants, interviews
-      profile: {
-        industry: '',
-        location: '',
-        website: '',
-        description: '',
-        hr_contact: ''
-      },
+      activeTab: 'overview', // overview, drives, applicants, interviews
       drives: [],
       applications: [],
       interviews: [],
-      
+
       // New Drive Form
       newDrive: {
         drive_name: '',
@@ -43,13 +36,14 @@ export default {
           }
         ]
       },
-      
+      editingDriveId: null,
+
       // Filtering / Action states
       selectedPositionFilter: '',
       actionAppId: null,
       actionStatus: '', // SHORTLISTED or REJECTED
       actionFeedback: '',
-      
+
       interviewAppId: null,
       newInterview: {
         start_time: '',
@@ -57,10 +51,10 @@ export default {
         location: '',
         meeting_link: ''
       },
-      
+
       selectAppId: null,
       joiningDate: '',
-      
+
       error: '',
       success: '',
       loading: false
@@ -85,8 +79,7 @@ export default {
   },
   methods: {
     syncTabWithRoute(route) {
-      if (route === '/company/profile') this.switchTab('profile');
-      else if (route === '/company/drives') this.switchTab('drives');
+      if (route === '/company/drives') this.switchTab('drives');
       else if (route === '/company/applicants') this.switchTab('applicants');
       else if (route === '/company/interviews') this.switchTab('interviews');
       else this.switchTab('overview');
@@ -95,49 +88,52 @@ export default {
       this.error = '';
       this.success = '';
     },
-    async fetchProfile() {
-      try {
-        const res = await fetch('/auth/me');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.user && data.user.details) {
-            this.profile = { ...data.user.details };
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching profile:', err);
-      }
-    },
-    async updateProfile() {
-      this.clearMessages();
-      this.loading = true;
-      try {
-        const res = await fetch('/auth/profile', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.profile)
-        });
-        const data = await res.json();
-        if (res.ok) {
-          this.success = 'Profile updated successfully.';
-        } else {
-          this.error = data.error || 'Failed to update profile.';
-        }
-      } catch (err) {
-        this.error = 'Network error. Failed to update profile.';
-      } finally {
-        this.loading = false;
-      }
-    },
     async fetchDrives() {
+      this.loading = true;
       try {
         const res = await fetch('/company/drives');
         if (res.ok) {
           const data = await res.json();
           this.drives = data.drives;
+        } else {
+          this.error = 'Failed to fetch drives.';
         }
       } catch (err) {
-        console.error('Error fetching drives:', err);
+        this.error = 'Network error fetching drives.';
+      } finally {
+        this.loading = false;
+      }
+    },
+    async fetchApplications() {
+      this.loading = true;
+      try {
+        const res = await fetch('/company/applications');
+        if (res.ok) {
+          const data = await res.json();
+          this.applications = data.applications;
+        } else {
+          this.error = 'Failed to fetch applications.';
+        }
+      } catch (err) {
+        this.error = 'Network error fetching applications.';
+      } finally {
+        this.loading = false;
+      }
+    },
+    async fetchInterviews() {
+      this.loading = true;
+      try {
+        const res = await fetch('/company/interviews');
+        if (res.ok) {
+          const data = await res.json();
+          this.interviews = data.interviews;
+        } else {
+          this.error = 'Failed to fetch interviews.';
+        }
+      } catch (err) {
+        this.error = 'Network error fetching interviews.';
+      } finally {
+        this.loading = false;
       }
     },
     addPositionForm() {
@@ -157,47 +153,82 @@ export default {
         this.newDrive.positions.splice(index, 1);
       }
     },
+    startEditDrive(drive) {
+      this.clearMessages();
+      this.editingDriveId = drive.id;
+      
+      let formattedDeadline = '';
+      if (drive.deadline) {
+        formattedDeadline = drive.deadline.replace(' ', 'T');
+      }
+
+      this.newDrive = {
+        drive_name: drive.drive_name,
+        description: drive.description,
+        eligible_year: drive.eligible_year,
+        deadline: formattedDeadline,
+        positions: drive.positions.map(p => ({
+          position_name: p.position_name,
+          description: p.description,
+          min_cgpa: p.min_cgpa,
+          branches: p.branches,
+          salary: p.salary,
+          skills: p.skills,
+          location: p.location,
+          mode: p.mode
+        }))
+      };
+    },
+    cancelEditDrive() {
+      this.editingDriveId = null;
+      this.resetDriveForm();
+    },
+    resetDriveForm() {
+      this.newDrive = {
+        drive_name: '',
+        description: '',
+        deadline: '',
+        eligible_year: null,
+        positions: [
+          {
+            position_name: '',
+            description: '',
+            min_cgpa: 6.0,
+            branches: '',
+            salary: null,
+            skills: '',
+            location: '',
+            mode: 'On-site'
+          }
+        ]
+      };
+    },
     async submitDrive() {
       this.clearMessages();
       this.loading = true;
-      
-      // Format deadline for the backend (replace T with space)
+
       const payload = {
         ...this.newDrive,
         deadline: this.newDrive.deadline ? this.newDrive.deadline.replace('T', ' ') : ''
       };
-      
+
+      const url = this.editingDriveId ? `/company/drives/${this.editingDriveId}` : '/company/drives';
+      const method = this.editingDriveId ? 'PUT' : 'POST';
+
       try {
-        const res = await fetch('/company/drives', {
-          method: 'POST',
+        const res = await fetch(url, {
+          method: method,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
         const data = await res.json();
         if (res.ok) {
           this.success = data.message;
-          // Reset form
-          this.newDrive = {
-            drive_name: '',
-            description: '',
-            deadline: '',
-            eligible_year: null,
-            positions: [
-              {
-                position_name: '',
-                description: '',
-                min_cgpa: 6.0,
-                branches: '',
-                salary: null,
-                skills: '',
-                location: '',
-                mode: 'On-site'
-              }
-            ]
-          };
+          this.editingDriveId = null;
+          this.resetDriveForm();
           this.fetchDrives();
         } else {
-          this.error = data.error || 'Failed to create drive.';
+          this.error = data.error || 'Failed to submit drive.';
         }
       } catch (err) {
         this.error = 'Network error. Failed to submit drive.';
@@ -205,15 +236,28 @@ export default {
         this.loading = false;
       }
     },
-    async fetchApplications() {
+    async deleteDrive(driveId) {
+      if (!confirm('Are you sure you want to delete this drive?')) return;
+      this.clearMessages();
+      this.loading = true;
       try {
-        const res = await fetch('/company/applications');
+        const res = await fetch(`/company/drives/${driveId}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
         if (res.ok) {
-          const data = await res.json();
-          this.applications = data.applications;
+          this.success = 'Drive deleted successfully.';
+          this.fetchDrives();
+          if (this.editingDriveId === driveId) {
+            this.cancelEditDrive();
+          }
+        } else {
+          this.error = data.error || 'Failed to delete drive.';
         }
       } catch (err) {
-        console.error('Error fetching applications:', err);
+        this.error = 'Network error. Failed to delete drive.';
+      } finally {
+        this.loading = false;
       }
     },
     openStatusModal(appId, status) {
@@ -223,7 +267,7 @@ export default {
       this.clearMessages();
     },
     async submitStatusUpdate() {
-      if (!this.actionAppId) return;
+      if (!this.actionAppId || !this.actionStatus) return;
       this.loading = true;
       try {
         const res = await fetch(`/company/applications/${this.actionAppId}/status`, {
@@ -236,27 +280,16 @@ export default {
         });
         const data = await res.json();
         if (res.ok) {
-          this.success = `Candidate successfully ${this.actionStatus.toLowerCase()}.`;
+          this.success = `Application successfully ${this.actionStatus.toLowerCase()}.`;
           this.actionAppId = null;
           this.fetchApplications();
         } else {
-          this.error = data.error || 'Failed to update status.';
+          this.error = data.error || 'Failed to update application status.';
         }
       } catch (err) {
-        this.error = 'Network error. Failed to update status.';
+        this.error = 'Network error updating candidate status.';
       } finally {
         this.loading = false;
-      }
-    },
-    async fetchInterviews() {
-      try {
-        const res = await fetch('/company/interviews');
-        if (res.ok) {
-          const data = await res.json();
-          this.interviews = data.interviews;
-        }
-      } catch (err) {
-        console.error('Error fetching interviews:', err);
       }
     },
     openInterviewForm(appId) {
@@ -272,11 +305,13 @@ export default {
     async submitInterview() {
       if (!this.interviewAppId) return;
       this.loading = true;
+      
       const payload = {
         application_id: this.interviewAppId,
         ...this.newInterview,
         start_time: this.newInterview.start_time ? this.newInterview.start_time.replace('T', ' ') : ''
       };
+
       try {
         const res = await fetch('/company/interviews', {
           method: 'POST',
@@ -285,15 +320,14 @@ export default {
         });
         const data = await res.json();
         if (res.ok) {
-          this.success = 'Interview scheduled and status updated.';
+          this.success = 'Interview scheduled and candidate status updated.';
           this.interviewAppId = null;
           this.fetchApplications();
-          this.fetchInterviews();
         } else {
           this.error = data.error || 'Failed to schedule interview.';
         }
       } catch (err) {
-        this.error = 'Network error. Failed to schedule interview.';
+        this.error = 'Network error scheduling interview.';
       } finally {
         this.loading = false;
       }
@@ -331,14 +365,12 @@ export default {
     switchTab(tab) {
       this.activeTab = tab;
       this.clearMessages();
-      if (tab === 'profile') this.fetchProfile();
-      else if (tab === 'drives') this.fetchDrives();
+      if (tab === 'drives') this.fetchDrives();
       else if (tab === 'applicants') this.fetchApplications();
       else if (tab === 'interviews') this.fetchInterviews();
     }
   },
   created() {
-    this.fetchProfile();
     this.syncTabWithRoute(this.currentRoute);
   },
   template: `
@@ -354,9 +386,6 @@ export default {
       <ul class="nav nav-tabs mb-4 border-bottom-0">
         <li class="nav-item">
           <button class="nav-link border-0" :class="{ 'fw-bold text-dark border-bottom border-dark border-2': activeTab === 'overview', 'text-muted': activeTab !== 'overview' }" @click="switchTab('overview')">Overview</button>
-        </li>
-        <li class="nav-item">
-          <button class="nav-link border-0" :class="{ 'fw-bold text-dark border-bottom border-dark border-2': activeTab === 'profile', 'text-muted': activeTab !== 'profile' }" @click="switchTab('profile')">Recruiter Profile</button>
         </li>
         <li class="nav-item">
           <button class="nav-link border-0" :class="{ 'fw-bold text-dark border-bottom border-dark border-2': activeTab === 'drives', 'text-muted': activeTab !== 'drives' }" @click="switchTab('drives')">Placement Drives</button>
@@ -386,38 +415,6 @@ export default {
         </div>
       </div>
 
-      <!-- Profile Tab -->
-      <div v-else-if="activeTab === 'profile'" class="row justify-content-start">
-        <div class="col-lg-8">
-          <form @submit.prevent="updateProfile" class="border p-4 bg-light">
-            <h5 class="fw-normal mb-4">Edit Recruiter Profile</h5>
-            <div class="mb-3">
-              <label class="form-label small text-muted">Industry Type</label>
-              <input type="text" v-model="profile.industry" class="form-control form-control-sm rounded-0" required>
-            </div>
-            <div class="mb-3">
-              <label class="form-label small text-muted">Location</label>
-              <input type="text" v-model="profile.location" class="form-control form-control-sm rounded-0" required>
-            </div>
-            <div class="mb-3">
-              <label class="form-label small text-muted">Website URL</label>
-              <input type="url" v-model="profile.website" class="form-control form-control-sm rounded-0" required>
-            </div>
-            <div class="mb-3">
-              <label class="form-label small text-muted">HR Contact Info</label>
-              <input type="text" v-model="profile.hr_contact" class="form-control form-control-sm rounded-0" required>
-            </div>
-            <div class="mb-3">
-              <label class="form-label small text-muted">Company Description</label>
-              <textarea v-model="profile.description" rows="4" class="form-control form-control-sm rounded-0" required></textarea>
-            </div>
-            <button type="submit" class="btn btn-sm btn-dark rounded-0 px-4 mt-2" :disabled="loading">
-              Save Profile Details
-            </button>
-          </form>
-        </div>
-      </div>
-
       <!-- Drives Tab -->
       <div v-else-if="activeTab === 'drives'">
         <div class="row g-4">
@@ -437,6 +434,11 @@ export default {
                 <span>Application Deadline: {{ d.deadline }}</span>
               </div>
               
+              <div v-if="d.status === 'PENDING'" class="mt-2 d-flex gap-2 border-top pt-2">
+                <button type="button" class="btn btn-xs btn-outline-dark rounded-0 py-0.5 px-2" style="font-size: 0.75rem;" @click="startEditDrive(d)">Edit</button>
+                <button type="button" class="btn btn-xs btn-outline-danger rounded-0 py-0.5 px-2" style="font-size: 0.75rem;" @click="deleteDrive(d.id)">Delete</button>
+              </div>
+              
               <div class="mt-3 border-top pt-2">
                 <span class="small fw-semibold d-block mb-1">Job Positions:</span>
                 <ul class="list-unstyled mb-0 ps-1">
@@ -452,10 +454,10 @@ export default {
             </div>
           </div>
 
-          <!-- Right side: Create new drive form -->
+          <!-- Right side: Create/Edit drive form -->
           <div class="col-lg-6">
             <form @submit.prevent="submitDrive" class="border p-4 bg-light">
-              <h5 class="fw-normal mb-3">Create Placement Drive</h5>
+              <h5 class="fw-normal mb-3">{{ editingDriveId ? 'Edit Placement Drive' : 'Create Placement Drive' }}</h5>
               
               <div class="mb-3">
                 <label class="form-label small text-muted">Drive Title / Job Role Group</label>
@@ -532,8 +534,13 @@ export default {
               </div>
 
               <div class="d-flex justify-content-between mt-3">
-                <button type="button" class="btn btn-sm btn-outline-secondary rounded-0" @click="addPositionForm">Add Another Position</button>
-                <button type="submit" class="btn btn-sm btn-dark rounded-0 px-4" :disabled="loading">Submit Drive Proposal</button>
+                <div>
+                  <button type="button" class="btn btn-sm btn-outline-secondary rounded-0 me-2" @click="addPositionForm">Add Another Position</button>
+                  <button v-if="editingDriveId" type="button" class="btn btn-sm btn-outline-danger rounded-0" @click="cancelEditDrive">Cancel Edit</button>
+                </div>
+                <button type="submit" class="btn btn-sm btn-dark rounded-0 px-4" :disabled="loading">
+                  {{ editingDriveId ? 'Save Changes' : 'Submit Drive Proposal' }}
+                </button>
               </div>
             </form>
           </div>
@@ -561,7 +568,7 @@ export default {
                 <th>Candidate Name</th>
                 <th>Applied Role</th>
                 <th>Branch & CGPA</th>
-                <th>Profile URLs</th>
+                <th>Profile / Resume</th>
                 <th>Applied On</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -582,8 +589,12 @@ export default {
                   <span class="text-muted">CGPA: {{ a.student.cgpa }}</span>
                 </td>
                 <td>
-                  <a :href="a.student.github_url" target="_blank" class="d-inline-block me-2 small text-decoration-none text-dark border-bottom border-dark">GitHub</a>
-                  <a :href="a.student.linkedin_url" target="_blank" class="d-inline-block small text-decoration-none text-dark border-bottom border-dark">LinkedIn</a>
+                  <div class="d-flex gap-2 flex-wrap">
+                    <a :href="a.student.github_url" target="_blank" class="small text-decoration-none text-dark border-bottom border-dark">GitHub</a>
+                    <a :href="a.student.linkedin_url" target="_blank" class="small text-decoration-none text-dark border-bottom border-dark">LinkedIn</a>
+                    <a v-if="a.student.resume_path" :href="a.student.resume_path" target="_blank" class="small text-decoration-none text-success border-bottom border-success fw-bold">Resume PDF</a>
+                    <span v-else class="text-muted small">No Resume</span>
+                  </div>
                 </td>
                 <td>{{ a.applied_at }}</td>
                 <td>
@@ -622,7 +633,7 @@ export default {
           </table>
         </div>
 
-        <!-- Inline Form Panels for Actions (Absolute Minimal Design instead of modals) -->
+        <!-- Inline Form Panels for Actions -->
         <div v-if="actionAppId" class="border p-4 bg-light mt-4">
           <h6 class="fw-normal mb-3">Provide Feedback for {{ actionStatus }} Candidate</h6>
           <div class="mb-3">

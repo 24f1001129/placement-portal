@@ -4,6 +4,8 @@ import RegisterStudent from './components/RegisterStudent.js';
 import RegisterCompany from './components/RegisterCompany.js';
 import AdminDashboard from './components/AdminDashboard.js';
 import CompanyDashboard from './components/CompanyDashboard.js';
+import Profile from './components/Profile.js';
+import StudentDashboard from './components/StudentDashboard.js';
 
 const { createApp } = Vue;
 
@@ -14,7 +16,9 @@ const app = createApp({
     RegisterStudent,
     RegisterCompany,
     AdminDashboard,
-    CompanyDashboard
+    CompanyDashboard,
+    Profile,
+    StudentDashboard
   },
   data() {
     return {
@@ -142,12 +146,11 @@ const app = createApp({
         <RegisterStudent v-else-if="currentRoute === '/register/student'" @navigate="navigate" />
         <RegisterCompany v-else-if="currentRoute === '/register/company'" @navigate="navigate" />
 
-        <!-- Protected Student Dashboard (Placeholder) -->
-        <div v-else-if="currentRoute.startsWith('/student')" class="card p-4 border rounded">
-          <h2 class="fw-bold">Student Dashboard</h2>
-          <p class="text-muted">Welcome, {{ user?.name }} ({{ user?.email }})</p>
-          <div class="badge bg-success d-inline-block my-2" style="max-width: fit-content;">Authenticated Student</div>
-        </div>
+        <!-- Protected Profile Page (Shared) -->
+        <Profile v-else-if="currentRoute === '/student/profile' || currentRoute === '/company/profile'" :user="user" @profile-updated="checkSession" />
+
+        <!-- Protected Student Dashboard -->
+        <StudentDashboard v-else-if="currentRoute.startsWith('/student')" :user="user" />
 
         <!-- Protected Company Dashboard -->
         <CompanyDashboard v-else-if="currentRoute.startsWith('/company')" :user="user" :current-route="currentRoute" @navigate="navigate" />
