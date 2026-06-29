@@ -25,7 +25,8 @@ const app = createApp({
       currentRoute: window.location.hash.slice(1) || '/',
       isAuthenticated: false,
       user: null,
-      loading: true
+      loading: true,
+      theme: localStorage.getItem('theme') || 'light'
     }
   },
   watch: {
@@ -40,7 +41,25 @@ const app = createApp({
     navigate(route) {
       this.currentRoute = route;
     },
+    applyTheme() {
+      document.documentElement.setAttribute('data-bs-theme', this.theme);
+    },
+    toggleTheme() {
+      this.theme = this.theme === 'light' ? 'dark' : 'light';
+      localStorage.setItem('theme', this.theme);
+      this.applyTheme();
+    },
     async checkSession() {
+      if (!sessionStorage.getItem('isLoggedIn')) {
+        this.isAuthenticated = false;
+        this.user = null;
+        try {
+          await fetch('/auth/logout', { method: 'POST' });
+        } catch (e) {}
+        this.loading = false;
+        this.checkRouteProtection();
+        return;
+      }
       try {
         const response = await fetch('/auth/me');
         if (response.ok) {
@@ -50,6 +69,7 @@ const app = createApp({
         } else {
           this.isAuthenticated = false;
           this.user = null;
+          sessionStorage.removeItem('isLoggedIn');
         }
       } catch (err) {
         console.error('Session sync error:', err);
@@ -62,6 +82,7 @@ const app = createApp({
     },
     async logout() {
       try {
+        sessionStorage.removeItem('isLoggedIn');
         const response = await fetch('/auth/logout', { method: 'POST' });
         if (response.ok) {
           this.isAuthenticated = false;
@@ -73,6 +94,7 @@ const app = createApp({
       }
     },
     handleLoginSuccess(userData) {
+      sessionStorage.setItem('isLoggedIn', 'true');
       this.isAuthenticated = true;
       this.user = userData;
     },
@@ -110,6 +132,7 @@ const app = createApp({
     }
   },
   created() {
+    this.applyTheme();
     // Sync initial session on mount
     this.checkSession();
 
@@ -117,10 +140,31 @@ const app = createApp({
     window.addEventListener('hashchange', () => {
       this.currentRoute = window.location.hash.slice(1) || '/';
     });
+
+    // Heartbeat sleep checker
+    let lastHeartbeat = Date.now();
+    setInterval(() => {
+      const now = Date.now();
+      if (now - lastHeartbeat > 300000) { // 5 minutes threshold
+        // Laptop went to sleep or page suspended
+        this.logout();
+      }
+      lastHeartbeat = now;
+    }, 10000);
+
+    // Visibility change listener to catch wake-up immediately
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        const now = Date.now();
+        if (now - lastHeartbeat > 300000) {
+          this.logout();
+        }
+      }
+    });
   },
   template: `
     <div>
-      <Navbar :user="user" :is-authenticated="isAuthenticated" @logout="logout" @navigate="navigate" />
+      <Navbar :user="user" :is-authenticated="isAuthenticated" :theme="theme" @logout="logout" @navigate="navigate" @toggle-theme="toggleTheme" />
       
       <div v-if="loading" class="d-flex justify-content-center align-items-center" style="min-height: 80vh;">
         <div class="spinner-border" role="status">
@@ -150,7 +194,7 @@ const app = createApp({
         <Profile v-else-if="currentRoute === '/student/profile' || currentRoute === '/company/profile'" :user="user" @profile-updated="checkSession" />
 
         <!-- Protected Student Dashboard -->
-        <StudentDashboard v-else-if="currentRoute.startsWith('/student')" :user="user" />
+        <StudentDashboard v-else-if="currentRoute.startsWith('/student')" :user="user" :current-route="currentRoute" />
 
         <!-- Protected Company Dashboard -->
         <CompanyDashboard v-else-if="currentRoute.startsWith('/company')" :user="user" :current-route="currentRoute" @navigate="navigate" />

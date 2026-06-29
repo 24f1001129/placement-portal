@@ -2,9 +2,10 @@ export default {
   name: 'Navbar',
   props: {
     user: Object,
-    isAuthenticated: Boolean
+    isAuthenticated: Boolean,
+    theme: String
   },
-  emits: ['logout', 'navigate'],
+  emits: ['logout', 'navigate', 'toggle-theme'],
   methods: {
     handleNav(route) {
       this.$emit('navigate', route);
@@ -14,7 +15,7 @@ export default {
     }
   },
   template: `
-    <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom sticky-top">
+    <nav class="navbar navbar-expand-lg border-bottom sticky-top bg-body-tertiary">
       <div class="container">
         <a class="navbar-brand fw-bold" href="#" @click.prevent="handleNav('/')">
           Placement Portal
@@ -90,6 +91,11 @@ export default {
                 <button class="btn btn-sm btn-outline-secondary" @click="handleLogout">Logout</button>
               </li>
             </template>
+            <li class="nav-item ms-2">
+              <button class="btn btn-sm btn-link text-secondary p-1" @click="$emit('toggle-theme')" :title="theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'">
+                <i :class="theme === 'light' ? 'bi bi-moon-fill' : 'bi bi-sun-fill'"></i>
+              </button>
+            </li>
           </ul>
         </div>
       </div>

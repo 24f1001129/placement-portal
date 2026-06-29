@@ -1,5 +1,5 @@
 from .database import db
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from sqlalchemy.orm import validates
 
@@ -81,11 +81,21 @@ class Drive(db.Model):
     status = db.Column(db.String(16), nullable=False, default='PENDING')
     eligible_year = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
-
-    @validates("eligible_year")
+    @validates("deadline", "eligible_year")
     def validate(self, key, value):
+        if key == "deadline" and value:
+            dt_val = value
+            if isinstance(dt_val, str):
+                try:
+                    dt_val = datetime.strptime(dt_val, '%Y-%m-%d %H:%M')
+                except ValueError:
+                    pass
+            if isinstance(dt_val, datetime):
+                now = datetime.now(dt_val.tzinfo) if getattr(dt_val, 'tzinfo', None) else datetime.now()
+                if dt_val < now - timedelta(minutes=5):
+                    raise ValueError("Deadline must be in the future")
         if key == "eligible_year":
-            if  len(str(value)) != 4 or not str(value).isdigit():
+            if len(str(value)) != 4 or not str(value).isdigit():
                 raise ValueError("Invalid graduation year")
         return value
 
@@ -128,9 +138,33 @@ class Placement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     application_id = db.Column(db.Integer, db.ForeignKey('applications.id', ondelete='CASCADE'), nullable=False, unique=True)
     joining_date = db.Column(db.DateTime, nullable=False)
+    acceptance_deadline = db.Column(db.DateTime, nullable=False)
     offer_letter_path = db.Column(db.String(256), nullable=False)
     status = db.Column(db.String(16), nullable=False, default='PENDING')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
+    @validates("joining_date", "acceptance_deadline")
+    def validate(self, key, value):
+        if value:
+            dt_val = value
+            if isinstance(dt_val, str):
+                try:
+                    dt_val = datetime.strptime(dt_val, '%Y-%m-%d %H:%M')
+                except ValueError:
+                    try:
+                        dt_val = datetime.strptime(dt_val, '%Y-%m-%d')
+                    except ValueError:
+                        pass
+            
+            if isinstance(dt_val, datetime):
+                now = datetime.now(dt_val.tzinfo) if getattr(dt_val, 'tzinfo', None) else datetime.now()
+                if dt_val < now - timedelta(minutes=5):
+                    raise ValueError(f"{key.replace('_', ' ').capitalize()} must be in the future")
+                
+            if key == "joining_date" and self.acceptance_deadline and value < self.acceptance_deadline:
+                raise ValueError("Joining date must be after acceptance deadline")
+            elif key == "acceptance_deadline" and self.joining_date and value > self.joining_date:
+                raise ValueError("Acceptance deadline must be before joining date")
+        return value
 
     application = db.relationship('Application', backref=db.backref('placement', cascade='all, delete-orphan', uselist=False), lazy=True)
 
@@ -155,5 +189,23 @@ class Interview(db.Model):
     status = db.Column(db.String(16), nullable=False, default='PENDING')
     meeting_link = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
+    @validates("start_time", "duration")
+    def validate(self, key, value):
+        if value is not None:
+            if key == "start_time":
+                dt_val = value
+                if isinstance(dt_val, str):
+                    try:
+                        dt_val = datetime.strptime(dt_val, '%Y-%m-%d %H:%M')
+                    except ValueError:
+                        pass
+                if isinstance(dt_val, datetime):
+                    now = datetime.now(dt_val.tzinfo) if getattr(dt_val, 'tzinfo', None) else datetime.now()
+                    if dt_val < now - timedelta(minutes=5):
+                        raise ValueError("Start time must be in the future")
+            elif key == "duration":
+                if value <= 0:
+                    raise ValueError("Duration must be a positive integer")
+        return value
 
     application = db.relationship('Application', backref=db.backref('interviews', cascade='all, delete-orphan'), lazy=True)

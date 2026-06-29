@@ -16,3 +16,29 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
+
+def format_indian_currency(amount):
+    """
+    Formats a number to Indian numbering system (lakhs/crores).
+    E.g., 1200000 -> 12,00,000
+    50000 -> 50,000
+    15000000 -> 1,50,00,000
+    """
+    if amount is None:
+        return ""
+    try:
+        s = str(int(amount))
+    except (ValueError, TypeError):
+        return str(amount)
+    if len(s) <= 3:
+        return s
+    last_three = s[-3:]
+    remaining = s[:-3]
+    chunks = []
+    while len(remaining) > 2:
+        chunks.append(remaining[-2:])
+        remaining = remaining[:-2]
+    if remaining:
+        chunks.append(remaining)
+    chunks.reverse()
+    return ",".join(chunks) + "," + last_three

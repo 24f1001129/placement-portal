@@ -177,7 +177,7 @@ def get_drives():
                 'company_name': d.company.company_name,
                 'drive_name': d.drive_name,
                 'description': d.description,
-                'deadline': d.deadline.strftime('%Y-%m-%d %H:%M'),
+                'deadline': d.deadline.strftime('%d/%m/%Y %I:%M %p'),
                 'status': d.status,
                 'eligible_year': d.eligible_year
             })
@@ -219,7 +219,7 @@ def get_applications():
                 'student_branch': a.student.branch,
                 'position_name': a.position.position_name,
                 'company_name': a.position.drive.company.company_name,
-                'applied_at': a.applied_at.strftime('%Y-%m-%d %H:%M'),
+                'applied_at': a.applied_at.strftime('%d/%m/%Y %I:%M %p'),
                 'status': a.status
             })
         return jsonify({'applications': result}), 200

@@ -54,6 +54,7 @@ export default {
 
       selectAppId: null,
       joiningDate: '',
+      acceptanceDeadline: '',
 
       error: '',
       success: '',
@@ -158,8 +159,8 @@ export default {
       this.editingDriveId = drive.id;
       
       let formattedDeadline = '';
-      if (drive.deadline) {
-        formattedDeadline = drive.deadline.replace(' ', 'T');
+      if (drive.raw_deadline) {
+        formattedDeadline = drive.raw_deadline.replace(' ', 'T');
       }
 
       this.newDrive = {
@@ -172,7 +173,7 @@ export default {
           description: p.description,
           min_cgpa: p.min_cgpa,
           branches: p.branches,
-          salary: p.salary,
+          salary: p.raw_salary,
           skills: p.skills,
           location: p.location,
           mode: p.mode
@@ -335,17 +336,19 @@ export default {
     openSelectionForm(appId) {
       this.selectAppId = appId;
       this.joiningDate = '';
+      this.acceptanceDeadline = '';
       this.clearMessages();
     },
     async submitSelection() {
-      if (!this.selectAppId || !this.joiningDate) return;
+      if (!this.selectAppId || !this.joiningDate || !this.acceptanceDeadline) return;
       this.loading = true;
       try {
         const res = await fetch(`/company/applications/${this.selectAppId}/select`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            joining_date: this.joiningDate
+            joining_date: this.joiningDate,
+            acceptance_deadline: this.acceptanceDeadline.replace('T', ' ')
           })
         });
         const data = await res.json();
@@ -443,7 +446,7 @@ export default {
                 <span class="small fw-semibold d-block mb-1">Job Positions:</span>
                 <ul class="list-unstyled mb-0 ps-1">
                   <li v-for="pos in d.positions" :key="pos.id" class="small py-1 border-bottom border-light">
-                    <strong>{{ pos.position_name }}</strong> (INR {{ pos.salary?.toLocaleString() }}/yr) <br>
+                    <strong>{{ pos.position_name }}</strong> (INR {{ pos.salary }}/yr) <br>
                     <span class="text-muted">Eligible: {{ pos.branches }} | Min CGPA: {{ pos.min_cgpa }}</span>
                   </li>
                 </ul>
@@ -675,9 +678,15 @@ export default {
         <div v-if="selectAppId" class="border p-4 bg-light mt-4">
           <h6 class="fw-normal mb-3">Process Final Placement Selection</h6>
           <p class="small text-muted mb-3">Selecting this candidate will automatically generate their offer letter and place them in the company system.</p>
-          <div class="mb-3 col-md-6">
-            <label class="form-label small text-muted">Expected Joining Date</label>
-            <input type="date" v-model="joiningDate" class="form-control form-control-sm rounded-0" required>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label small text-muted">Expected Joining Date</label>
+              <input type="date" v-model="joiningDate" class="form-control form-control-sm rounded-0" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">Offer Acceptance Deadline</label>
+              <input type="datetime-local" v-model="acceptanceDeadline" class="form-control form-control-sm rounded-0" required>
+            </div>
           </div>
           <div class="d-flex gap-2">
             <button class="btn btn-sm btn-success rounded-0" @click="submitSelection" :disabled="loading">Select & Offer Job</button>

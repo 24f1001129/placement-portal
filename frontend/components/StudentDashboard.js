@@ -3,6 +3,15 @@ const StudentDashboard = {
     user: {
       type: Object,
       required: true
+    },
+    currentRoute: {
+      type: String,
+      default: ''
+    }
+  },
+  watch: {
+    currentRoute(newRoute) {
+      this.syncTabWithRoute(newRoute);
     }
   },
   data() {
@@ -176,10 +185,23 @@ const StudentDashboard = {
         default:
           return 'bg-secondary text-white';
       }
+    },
+    syncTabWithRoute(route) {
+      if (!route) return;
+      if (route.endsWith('/student/applications')) {
+        this.switchTab('applications');
+      } else if (route.endsWith('/student/dashboard')) {
+        this.switchTab('overview');
+      }
+    },
+    isExpired(deadlineIso) {
+      if (!deadlineIso) return false;
+      return new Date() > new Date(deadlineIso);
     }
   },
   created() {
     this.fetchOverviewData();
+    this.syncTabWithRoute(this.currentRoute);
   },
   template: `
     <div>
@@ -356,7 +378,7 @@ const StudentDashboard = {
                           <p class="text-muted small mt-1 mb-2">{{ p.description }}</p>
                           
                           <div class="small text-muted mb-2">
-                            CTC: <strong>INR {{ p.salary.toLocaleString() }}</strong> | 
+                            CTC: <strong>INR {{ p.salary }}</strong> | 
                             Location: <strong>{{ p.location }}</strong> | 
                             Mode: <strong>{{ p.mode }}</strong> | 
                             Min CGPA: <strong>{{ p.min_cgpa }}</strong>
@@ -372,7 +394,7 @@ const StudentDashboard = {
                           <button v-if="hasApplied(p.id)" class="btn btn-sm btn-secondary" disabled>
                             Applied
                           </button>
-                          <button v-else class="btn btn-sm btn-dark" @click="applyToJob(p.id)" :disabled="actionLoadingId === p.id">
+                          <button v-else class="btn btn-sm btn-dark" @click="applyToJob(p.id)" :disabled="actionLoadingId === p.id || stats.placed" :title="stats.placed ? 'You have already accepted a placement offer' : ''">
                             <span v-if="actionLoadingId === p.id" class="spinner-border spinner-border-sm me-2" role="status"></span>
                             Apply
                           </button>
@@ -403,7 +425,7 @@ const StudentDashboard = {
                   <div>
                     <strong class="text-dark">{{ a.position.company_name }} - {{ a.position.position_name }}</strong>
                     <div class="text-muted small">
-                      Applied: {{ a.applied_at }} | CTC: INR {{ a.position.salary.toLocaleString() }} | Location: {{ a.position.location }}
+                      Applied: {{ a.applied_at }} | CTC: INR {{ a.position.salary }} | Location: {{ a.position.location }}
                     </div>
                   </div>
                   <span class="badge" :class="getStatusBadgeClass(a.status)">
@@ -450,7 +472,7 @@ const StudentDashboard = {
                   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                     <div>
                       <strong class="text-success fs-5">{{ p.company_name }} &bull; {{ p.position_name }}</strong>
-                      <div class="text-muted small">Joining Date: {{ p.joining_date }} | Issued: {{ p.created_at }}</div>
+                      <div class="text-muted small">Joining Date: {{ p.joining_date }} | Issued: {{ p.created_at }} | Deadline: {{ p.acceptance_deadline }}</div>
                     </div>
                     <span class="badge" :class="getStatusBadgeClass(p.status)">
                       {{ p.status }}
@@ -468,15 +490,21 @@ const StudentDashboard = {
                   </div>
 
                   <!-- Actions -->
-                  <div v-if="p.status === 'PENDING'" class="d-flex justify-content-end gap-2">
-                    <button class="btn btn-sm btn-outline-danger" @click="respondToPlacement(p.id, 'REJECTED')" :disabled="actionLoadingId === p.id">
-                      <span v-if="actionLoadingId === p.id" class="spinner-border spinner-border-sm me-2" role="status"></span>
-                      Reject Offer
-                    </button>
-                    <button class="btn btn-sm btn-success" @click="respondToPlacement(p.id, 'ACCEPTED')" :disabled="actionLoadingId === p.id">
-                      <span v-if="actionLoadingId === p.id" class="spinner-border spinner-border-sm me-2" role="status"></span>
-                      Accept Offer
-                    </button>
+                  <div v-if="p.status === 'PENDING'" class="d-flex justify-content-between align-items-center w-100 flex-wrap gap-2">
+                    <div class="small fw-bold">
+                      <span v-if="isExpired(p.raw_acceptance_deadline)" class="text-danger">EXPIRED</span>
+                      <span v-else class="text-muted">Accept before: {{ p.acceptance_deadline }}</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                      <button class="btn btn-sm btn-outline-danger" @click="respondToPlacement(p.id, 'REJECTED')" :disabled="actionLoadingId === p.id || isExpired(p.raw_acceptance_deadline)">
+                        <span v-if="actionLoadingId === p.id" class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        Reject Offer
+                      </button>
+                      <button class="btn btn-sm btn-success" @click="respondToPlacement(p.id, 'ACCEPTED')" :disabled="actionLoadingId === p.id || isExpired(p.raw_acceptance_deadline)">
+                        <span v-if="actionLoadingId === p.id" class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        Accept Offer
+                      </button>
+                    </div>
                   </div>
                   <div v-else class="text-end text-muted small">
                     You have <strong>{{ p.status.toLowerCase() }}</strong> this offer.

@@ -1,29 +1,29 @@
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background-color: #ffffff;
-    color: #212529;
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
     min-height: 100vh;
 }
 
 /* Neat layout panels instead of glass panels */
 .glass-panel, .card-premium {
-    background-color: #ffffff;
-    border: 1px solid #dee2e6;
+    background-color: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
     border-radius: 4px;
     padding: 1.5rem;
     margin-bottom: 1rem;
 }
 
 .glass-nav {
-    background-color: #f8f9fa;
-    border-bottom: 1px solid #dee2e6;
+    background-color: var(--bs-tertiary-bg);
+    border-bottom: 1px solid var(--bs-border-color);
 }
 
 /* Custom form inputs - clean, white, minimal */
 .form-control-premium {
-    background-color: #ffffff !important;
-    border: 1px solid #ced4da !important;
-    color: #212529 !important;
+    background-color: var(--bs-body-bg) !important;
+    border: 1px solid var(--bs-border-color) !important;
+    color: var(--bs-body-color) !important;
     border-radius: 4px !important;
     padding: 8px 12px !important;
 }
@@ -36,9 +36,9 @@ body {
 
 .form-select-premium {
     composes: form-control-premium;
-    background-color: #ffffff !important;
-    border: 1px solid #ced4da !important;
-    color: #212529 !important;
+    background-color: var(--bs-body-bg) !important;
+    border: 1px solid var(--bs-border-color) !important;
+    color: var(--bs-body-color) !important;
     border-radius: 4px !important;
     padding: 8px 12px !important;
 }
@@ -63,9 +63,9 @@ body {
 }
 
 .btn-premium-secondary {
-    background: #f8f9fa !important;
-    border: 1px solid #dee2e6 !important;
-    color: #212529 !important;
+    background: var(--bs-secondary-bg) !important;
+    border: 1px solid var(--bs-border-color) !important;
+    color: var(--bs-body-color) !important;
     padding: 8px 16px;
     border-radius: 4px;
     box-shadow: none !important;
@@ -74,9 +74,9 @@ body {
 }
 
 .btn-premium-secondary:hover {
-    background: #e2e6ea !important;
-    border-color: #dae0e5 !important;
-    color: #212529 !important;
+    background: var(--bs-tertiary-bg) !important;
+    border-color: var(--bs-border-color) !important;
+    color: var(--bs-body-color) !important;
 }
 
 /* Simple Chip/Badge tags */
@@ -113,6 +113,6 @@ body {
 
 .navbar-brand span {
     background: none !important;
-    color: #212529 !important;
+    color: var(--bs-body-color) !important;
     -webkit-text-fill-color: initial !important;
 }

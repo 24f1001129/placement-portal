@@ -23,26 +23,24 @@ def register_student():
 
     try:
         # Create user
-        new_user = User(
-            email=email,
-            password_hash=generate_password_hash(password),
-            role='STUDENT'
-        )
+        new_user = User()
+        new_user.email = email
+        new_user.password_hash = generate_password_hash(password)
+        new_user.role = 'STUDENT'
         
         # Create student profile
-        new_student = Student(
-            user=new_user,
-            full_name=data.get('full_name'),
-            branch=data.get('branch'),
-            cgpa=float(data.get('cgpa')),
-            grad_year=int(data.get('grad_year')),
-            phone=data.get('phone'),
-            skills=data.get('skills'),
-            experience=data.get('experience', ''),
-            github_url=data.get('github_url'),
-            linkedin_url=data.get('linkedin_url'),
-            portfolio_url=data.get('portfolio_url', '')
-        )
+        new_student = Student()
+        new_student.user = new_user
+        new_student.full_name = data.get('full_name')
+        new_student.branch = data.get('branch')
+        new_student.cgpa = float(data.get('cgpa'))
+        new_student.grad_year = int(data.get('grad_year'))
+        new_student.phone = data.get('phone')
+        new_student.skills = data.get('skills')
+        new_student.experience = data.get('experience', '')
+        new_student.github_url = data.get('github_url')
+        new_student.linkedin_url = data.get('linkedin_url')
+        new_student.portfolio_url = data.get('portfolio_url', '')
         
         db.session.add(new_user)
         db.session.add(new_student)
@@ -77,22 +75,20 @@ def register_company():
         return jsonify({'error': 'Company name is already registered'}), 409
 
     try:
-        new_user = User(
-            email=email,
-            password_hash=generate_password_hash(password),
-            role='COMPANY'
-        )
+        new_user = User()
+        new_user.email = email
+        new_user.password_hash = generate_password_hash(password)
+        new_user.role = 'COMPANY'
         
-        new_company = Company(
-            user=new_user,
-            company_name=company_name,
-            industry=data.get('industry'),
-            location=data.get('location'),
-            website=data.get('website'),
-            description=data.get('description'),
-            hr_contact=data.get('hr_contact'),
-            approval_status='PENDING'
-        )
+        new_company = Company()
+        new_company.user = new_user
+        new_company.company_name = company_name
+        new_company.industry = data.get('industry')
+        new_company.location = data.get('location')
+        new_company.website = data.get('website')
+        new_company.description = data.get('description')
+        new_company.hr_contact = data.get('hr_contact')
+        new_company.approval_status = 'PENDING'
         
         db.session.add(new_user)
         db.session.add(new_company)
