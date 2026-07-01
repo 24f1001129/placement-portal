@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, session
 from functools import wraps
 from backend.models import User, Student, Company, Drive, Position, Application, db
+from backend.extensions import cache
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -14,6 +15,7 @@ def admin_required(f):
 
 @admin_bp.route('/stats', methods=['GET'])
 @admin_required
+@cache.cached(timeout=60, key_prefix='admin_dashboard')
 def get_stats():
     try:
         total_students = Student.query.count()
@@ -40,6 +42,7 @@ def get_stats():
 
 @admin_bp.route('/companies', methods=['GET'])
 @admin_required
+
 def get_companies():
     search = request.args.get('search', '').strip()
     try:
@@ -86,7 +89,8 @@ def update_company_status(company_id):
     try:
         company.approval_status = status
         db.session.commit()
-        return jsonify({'message': f'Company status updated to {status}'}), 200
+        cache.clear()
+        return jsonify({'message': f'Company {status.lower()} successfully.'}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': 'Failed to update company status'}), 500
@@ -112,6 +116,7 @@ def toggle_company_blacklist(company_id):
 
 @admin_bp.route('/students', methods=['GET'])
 @admin_required
+
 def get_students():
     search = request.args.get('search', '').strip()
     try:
@@ -159,6 +164,7 @@ def toggle_student_blacklist(student_id):
         student.user.is_active = not student.is_blacklisted
         db.session.commit()
         
+        cache.clear()
         action = 'blacklisted' if student.is_blacklisted else 'removed from blacklist'
         return jsonify({'message': f'Student successfully {action}'}), 200
     except Exception as e:
@@ -225,3 +231,13 @@ def get_applications():
         return jsonify({'applications': result}), 200
     except Exception as e:
         return jsonify({'error': 'Failed to retrieve applications'}), 500
+
+@admin_bp.route('/reports/trigger', methods=['POST'])
+@admin_required
+def trigger_monthly_reports():
+    from backend.tasks import generate_monthly_company_reports
+    try:
+        task = generate_monthly_company_reports.delay()
+        return jsonify({'message': 'Monthly reports generation triggered.', 'task_id': task.id}), 200
+    except Exception as e:
+        return jsonify({'error': 'Failed to trigger report generation task.'}), 500

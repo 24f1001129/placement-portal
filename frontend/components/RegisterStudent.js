@@ -16,10 +16,10 @@ export default {
       github_url: '',
       linkedin_url: '',
       portfolio_url: '',
-      
       error: '',
       success: '',
-      loading: false
+      loading: false,
+      resumeFile: null
     }
   },
   methods: {
@@ -54,30 +54,34 @@ export default {
         return;
       }
       
+      if (!this.resumeFile) {
+        this.error = 'Please upload a PDF resume.';
+        return;
+      }
+      
       this.error = '';
       this.success = '';
       this.loading = true;
       
       try {
+        const formData = new FormData();
+        formData.append('email', this.email);
+        formData.append('password', this.password);
+        formData.append('full_name', this.full_name);
+        formData.append('branch', this.branch);
+        formData.append('cgpa', this.cgpa);
+        formData.append('grad_year', this.grad_year);
+        formData.append('phone', this.phone);
+        formData.append('skills', this.skills);
+        formData.append('experience', this.experience);
+        formData.append('github_url', this.github_url);
+        formData.append('linkedin_url', this.linkedin_url);
+        formData.append('portfolio_url', this.portfolio_url);
+        formData.append('resume', this.resumeFile);
+        
         const response = await fetch('/auth/register/student', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            email: this.email,
-            password: this.password,
-            full_name: this.full_name,
-            branch: this.branch,
-            cgpa: parseFloat(this.cgpa),
-            grad_year: parseInt(this.grad_year),
-            phone: this.phone,
-            skills: this.skills,
-            experience: this.experience,
-            github_url: this.github_url,
-            linkedin_url: this.linkedin_url,
-            portfolio_url: this.portfolio_url
-          })
+          body: formData
         });
         
         const result = await response.json();
@@ -95,6 +99,9 @@ export default {
       } finally {
         this.loading = false;
       }
+    },
+    handleFileUpload(event) {
+      this.resumeFile = event.target.files[0];
     }
   },
   template: `
@@ -167,9 +174,15 @@ export default {
               
               <h5 class="fw-bold mb-3 mt-4">Professional Profiles</h5>
               
-              <div class="mb-3">
-                <label class="form-label small fw-bold">Skills (comma separated)</label>
-                <input type="text" v-model="skills" class="form-control" placeholder="e.g. Python, SQL" required />
+              <div class="row mb-3">
+                <div class="col-md-6 mb-3 mb-md-0">
+                  <label class="form-label small fw-bold">Skills (comma separated)</label>
+                  <input type="text" v-model="skills" class="form-control" placeholder="e.g. Python, SQL" required />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold">Resume (PDF)</label>
+                  <input type="file" accept=".pdf" @change="handleFileUpload" class="form-control" required />
+                </div>
               </div>
               
               <div class="row mb-3">

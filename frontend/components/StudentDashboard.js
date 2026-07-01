@@ -25,7 +25,8 @@ const StudentDashboard = {
       error: '',
       success: '',
       loading: false,
-      actionLoadingId: null
+      actionLoadingId: null,
+      exportPolling: null
     };
   },
   computed: {
@@ -197,7 +198,44 @@ const StudentDashboard = {
     isExpired(deadlineIso) {
       if (!deadlineIso) return false;
       return new Date() > new Date(deadlineIso);
+    },
+    async exportData() {
+      this.clearMessages();
+      try {
+        const res = await fetch('/student/export', { method: 'POST' });
+        const result = await res.json();
+        if (res.ok) {
+          this.success = 'Data export started. You will be notified when it completes.';
+          this.startPolling(result.task_id);
+        } else {
+          this.error = result.error || 'Failed to start data export.';
+        }
+      } catch (err) {
+        this.error = 'Network error starting export.';
+      }
+    },
+    startPolling(taskId) {
+      if (this.exportPolling) clearInterval(this.exportPolling);
+      this.exportPolling = setInterval(async () => {
+        try {
+          const res = await fetch(`/auth/tasks/${taskId}/status`);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.task_status === 'SUCCESS') {
+            clearInterval(this.exportPolling);
+            this.success = 'Data export successful! An email has been sent with the CSV file attached.';
+          } else if (data.task_status === 'FAILURE') {
+            clearInterval(this.exportPolling);
+            this.error = 'Data export failed during generation.';
+          }
+        } catch (e) {
+          console.error('Polling error', e);
+        }
+      }, 2000);
     }
+  },
+  unmounted() {
+    if (this.exportPolling) clearInterval(this.exportPolling);
   },
   created() {
     this.fetchOverviewData();
@@ -212,7 +250,10 @@ const StudentDashboard = {
           <p class="text-muted mb-0 small">Welcome, {{ user.name }}</p>
         </div>
         
-        <div class="btn-group">
+        <div class="d-flex gap-3 align-items-center flex-wrap">
+          <button class="btn btn-sm btn-outline-dark" @click="exportData()">
+            Export Data
+          </button>
           <button class="btn btn-sm" :class="activeTab === 'overview' ? 'btn-dark' : 'btn-outline-secondary'" @click="switchTab('overview')">
             Overview
           </button>
@@ -225,6 +266,7 @@ const StudentDashboard = {
           <button class="btn btn-sm" :class="activeTab === 'offers' ? 'btn-dark' : 'btn-outline-secondary'" @click="switchTab('offers')">
             Offers
           </button>
+        </div>
         </div>
       </div>
 

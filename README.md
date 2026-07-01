@@ -10,4 +10,11 @@ This is the repository for the Placement Portal Application, built with Flask an
    ```shell
    pip install -r requirements.txt
    ```
-2. Run the app: `python app.py`
+2. Start the Flask application:
+   ```shell
+   python app.py
+   ```
+3. Open a **new, second terminal** and start the Celery worker:
+   ```shell
+   celery -A celery_worker.celery worker --loglevel=info --pool=solo
+   ```

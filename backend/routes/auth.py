@@ -1,16 +1,23 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, current_app
+import os
 from werkzeug.security import generate_password_hash, check_password_hash
 from backend.models import User, Student, Company, db
+from backend.extensions import cache
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
 @auth_bp.route('/register/student', methods=['POST'])
 def register_student():
-    data = request.get_json() or {}
+    data = request.form
     
     # Required fields check
     required_fields = ['email', 'password', 'full_name', 'branch', 'cgpa', 'grad_year', 'phone', 'skills', 'github_url', 'linkedin_url']
     missing = [field for field in required_fields if not data.get(field)]
+    
+    resume_file = request.files.get('resume')
+    if not resume_file:
+        missing.append('resume')
+        
     if missing:
         return jsonify({'error': f'Missing fields: {", ".join(missing)}'}), 400
 
@@ -41,10 +48,24 @@ def register_student():
         new_student.github_url = data.get('github_url')
         new_student.linkedin_url = data.get('linkedin_url')
         new_student.portfolio_url = data.get('portfolio_url', '')
+        # Set a temporary path because it cannot be null
+        new_student.resume_path = 'pending_upload.pdf'
         
         db.session.add(new_user)
         db.session.add(new_student)
+        db.session.flush() # To get the new student ID
+        
+        if resume_file.filename != '' and resume_file.filename.lower().endswith('.pdf'):
+            static_folder = current_app.static_folder or os.path.join(os.getcwd(), 'frontend')
+            resumes_dir = os.path.join(static_folder, 'uploads', 'resumes')
+            os.makedirs(resumes_dir, exist_ok=True)
+            filename = f"resume_student_{new_student.id}.pdf"
+            file_path = os.path.join(resumes_dir, filename)
+            resume_file.save(file_path)
+            new_student.resume_path = f"/uploads/resumes/{filename}"
+            
         db.session.commit()
+        cache.delete('admin_dashboard')
         return jsonify({'message': 'Student registered successfully. You can now login.'}), 201
         
     except ValueError as e:
@@ -93,6 +114,7 @@ def register_company():
         db.session.add(new_user)
         db.session.add(new_company)
         db.session.commit()
+        cache.delete('admin_dashboard')
         return jsonify({'message': 'Company profile submitted successfully. Access is pending admin approval.'}), 201
         
     except ValueError as e:
@@ -272,3 +294,17 @@ def update_profile():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': 'Failed to update profile details'}), 500
+
+@auth_bp.route('/tasks/<task_id>/status', methods=['GET'])
+def get_task_status(task_id):
+    from celery.result import AsyncResult
+    try:
+        task_result = AsyncResult(task_id)
+        result = {
+            "task_id": task_id,
+            "task_status": task_result.status,
+            "task_result": task_result.result if task_result.status == 'SUCCESS' else str(task_result.info)
+        }
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'error': 'Failed to check task status.'}), 500

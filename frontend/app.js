@@ -200,7 +200,7 @@ const app = createApp({
         <CompanyDashboard v-else-if="currentRoute.startsWith('/company')" :user="user" :current-route="currentRoute" @navigate="navigate" />
 
         <!-- Protected Admin Dashboard -->
-        <AdminDashboard v-else-if="currentRoute.startsWith('/admin')" :user="user" @navigate="navigate" />
+        <AdminDashboard v-else-if="currentRoute.startsWith('/admin')" :user="user" :current-route="currentRoute" @navigate="navigate" />
         
         <!-- 404 Route Fallback -->
         <div v-else class="text-center py-5">

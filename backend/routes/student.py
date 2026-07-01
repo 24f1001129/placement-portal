@@ -6,6 +6,8 @@ import os
 from werkzeug.utils import secure_filename
 from backend.models import User, Student, Company, Drive, Position, Application, Placement, Interview, db
 from backend.models.database import format_indian_currency
+from backend.extensions import cache
+from backend.tasks import export_application_history, send_status_update_email
 
 student_bp = Blueprint('student', __name__, url_prefix='/student')
 
@@ -28,6 +30,7 @@ def student_required(f):
 
 @student_bp.route('/drives', methods=['GET'])
 @student_required
+@cache.cached(timeout=60, key_prefix='student_drives')
 def get_student_drives():
     try:
         # Fetch only APPROVED drives of non-blacklisted companies
@@ -104,6 +107,17 @@ def apply_to_position():
         new_app.status = 'APPLIED'
         db.session.add(new_app)
         db.session.commit()
+        
+        # Send email notification
+        send_status_update_email.delay(
+            student_email=student.user.email,
+            student_name=student.full_name,
+            position_name=pos.position_name,
+            company_name=pos.drive.company.company_name,
+            status='APPLIED'
+        )
+        
+        cache.delete('admin_dashboard')
         return jsonify({'message': 'Application submitted successfully.', 'application_id': new_app.id}), 201
     except Exception as e:
         db.session.rollback()
@@ -223,6 +237,7 @@ def update_placement_status(placement_id):
     try:
         p.status = status
         db.session.commit()
+        cache.delete('admin_dashboard')
         return jsonify({'message': f'Placement offer successfully {status.lower()}.', 'status': p.status}), 200
     except Exception as e:
         db.session.rollback()
@@ -261,3 +276,17 @@ def upload_resume():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': 'Failed to save resume file.'}), 500
+
+@student_bp.route('/export', methods=['POST'])
+@student_required
+def export_data():
+    from backend.tasks import export_application_history
+    user_id = session.get('user_id')
+    student = Student.query.filter_by(user_id=user_id).first()
+    email = student.user.email
+    
+    try:
+        task = export_application_history.delay(user_id, 'STUDENT', email)
+        return jsonify({'message': 'Data export started.', 'task_id': task.id}), 200
+    except Exception as e:
+        return jsonify({'error': 'Failed to trigger data export task.'}), 500

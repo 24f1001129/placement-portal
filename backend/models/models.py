@@ -42,7 +42,7 @@ class Student(db.Model):
     phone = db.Column(db.String(10), nullable=False, unique=True)
     skills = db.Column(db.String(255), nullable=False)
     experience = db.Column(db.String(255))
-    resume_path = db.Column(db.String(255))
+    resume_path = db.Column(db.String(255), nullable=False)
     github_url = db.Column(db.String(64), nullable=False, unique=True)
     linkedin_url = db.Column(db.String(64), nullable=False, unique=True)
     portfolio_url = db.Column(db.String(64), unique=True) 

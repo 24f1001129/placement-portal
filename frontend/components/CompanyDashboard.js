@@ -58,7 +58,8 @@ export default {
 
       error: '',
       success: '',
-      loading: false
+      loading: false,
+      exportPolling: null
     }
   },
   computed: {
@@ -169,6 +170,7 @@ export default {
         eligible_year: drive.eligible_year,
         deadline: formattedDeadline,
         positions: drive.positions.map(p => ({
+          id: p.id,
           position_name: p.position_name,
           description: p.description,
           min_cgpa: p.min_cgpa,
@@ -371,7 +373,44 @@ export default {
       if (tab === 'drives') this.fetchDrives();
       else if (tab === 'applicants') this.fetchApplications();
       else if (tab === 'interviews') this.fetchInterviews();
+    },
+    async exportData() {
+      this.clearMessages();
+      try {
+        const res = await fetch('/company/export', { method: 'POST' });
+        const result = await res.json();
+        if (res.ok) {
+          this.success = 'Data export started. You will be notified when it completes.';
+          this.startPolling(result.task_id);
+        } else {
+          this.error = result.error || 'Failed to start data export.';
+        }
+      } catch (err) {
+        this.error = 'Network error starting export.';
+      }
+    },
+    startPolling(taskId) {
+      if (this.exportPolling) clearInterval(this.exportPolling);
+      this.exportPolling = setInterval(async () => {
+        try {
+          const res = await fetch(`/auth/tasks/${taskId}/status`);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.task_status === 'SUCCESS') {
+            clearInterval(this.exportPolling);
+            this.success = 'Data export successful! An email has been sent with the CSV file attached.';
+          } else if (data.task_status === 'FAILURE') {
+            clearInterval(this.exportPolling);
+            this.error = 'Data export failed during generation.';
+          }
+        } catch (e) {
+          console.error('Polling error', e);
+        }
+      }, 2000);
     }
+  },
+  unmounted() {
+    if (this.exportPolling) clearInterval(this.exportPolling);
   },
   created() {
     this.syncTabWithRoute(this.currentRoute);
@@ -379,9 +418,14 @@ export default {
   template: `
     <div class="container my-4">
       <div class="row mb-3">
-        <div class="col">
-          <h2 class="fw-light">Recruiter Dashboard</h2>
-          <p class="text-muted small">Post placement drives and manage applications and interviews.</p>
+        <div class="col d-flex justify-content-between align-items-center flex-wrap gap-3">
+          <div>
+            <h2 class="fw-light">Recruiter Dashboard</h2>
+            <p class="text-muted small">Post placement drives and manage applications and interviews.</p>
+          </div>
+          <button class="btn btn-sm btn-outline-dark" @click="exportData()">
+            Export Data
+          </button>
         </div>
       </div>
 

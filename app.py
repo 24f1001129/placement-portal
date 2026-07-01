@@ -3,11 +3,26 @@ from flask import Flask, jsonify
 from backend.config import Config
 from backend.models import User
 from backend.models.database import db
+from backend.extensions import mail, cache
+from backend.celery_app import celery_init_app
 
 def create_app():
     app = Flask(__name__, static_folder='frontend', static_url_path='')
     app.config.from_object(Config)
+    
+    # Configure Celery dict mapping from config
+    app.config.from_mapping(
+        CELERY=dict(
+            broker_url=app.config.get('CELERY_BROKER_URL'),
+            result_backend=app.config.get('CELERY_RESULT_BACKEND'),
+            task_ignore_result=False,
+        ),
+    )
+    
     db.init_app(app)
+    mail.init_app(app)
+    cache.init_app(app)
+    celery_app = celery_init_app(app)
 
     @app.route('/')
     def index():
@@ -34,4 +49,4 @@ def create_app():
     return app
 
 app = create_app()
-app.run(port=5000, host='0.0.0.0')
+app.run(port=5000, host='0.0.0.0', debug=True)

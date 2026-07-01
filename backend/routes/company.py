@@ -5,6 +5,8 @@ import pytz
 import os
 from backend.models import User, Company, Student, Drive, Position, Application, Placement, Interview, db
 from backend.models.database import format_indian_currency
+from backend.extensions import cache
+from backend.tasks import export_application_history, send_status_update_email
 
 # reportlab imports
 from reportlab.lib.pagesizes import letter
@@ -201,6 +203,8 @@ def create_drive():
             db.session.add(new_position)
             
         db.session.commit()
+        cache.delete('admin_dashboard')
+        cache.delete('student_drives')
         return jsonify({'message': 'Placement drive and job positions submitted for admin approval.', 'drive_id': new_drive.id}), 201
         
     except ValueError as e:
@@ -306,6 +310,18 @@ def update_application_status(app_id):
         a.status = status
         a.feedback = feedback
         db.session.commit()
+        
+        # Send email notification
+        send_status_update_email.delay(
+            student_email=a.student.user.email,
+            student_name=a.student.full_name,
+            position_name=a.position.position_name,
+            company_name=a.position.drive.company.company_name,
+            status=status,
+            feedback=feedback
+        )
+        
+        cache.delete('admin_dashboard')
         return jsonify({'message': f'Application status updated to {status}.'}), 200
     except Exception as e:
         db.session.rollback()
@@ -361,6 +377,17 @@ def schedule_interview():
         
         db.session.add(new_interview)
         db.session.commit()
+        
+        # Send email notification
+        send_status_update_email.delay(
+            student_email=a.student.user.email,
+            student_name=a.student.full_name,
+            position_name=a.position.position_name,
+            company_name=a.position.drive.company.company_name,
+            status='INTERVIEW'
+        )
+        
+        cache.delete('admin_dashboard')
         return jsonify({'message': 'Interview scheduled successfully and status updated to INTERVIEW.', 'interview_id': new_interview.id}), 201
         
     except ValueError as e:
@@ -478,6 +505,16 @@ def select_candidate(app_id):
         db.session.add(new_placement)
         db.session.commit()
         
+        # Send email notification
+        send_status_update_email.delay(
+            student_email=a.student.user.email,
+            student_name=a.student.full_name,
+            position_name=a.position.position_name,
+            company_name=a.position.drive.company.company_name,
+            status='PLACED'
+        )
+        
+        cache.delete('admin_dashboard')
         return jsonify({
             'message': 'Candidate selected. Offer letter generated successfully.',
             'placement_id': new_placement.id,
@@ -534,11 +571,20 @@ def edit_drive(drive_id):
         drive.deadline = deadline
         drive.eligible_year = int(eligible_year)
         
-        # Delete existing positions and re-add them
-        for pos in list(drive.positions):
-            db.session.delete(pos)
-            
+        # Fetch current positions mapped by ID
+        existing_positions = {p.id: p for p in drive.positions}
+        incoming_ids = [p_data.get('id') for p_data in positions_data if p_data.get('id')]
+        
+        # Check for positions to delete
+        for pos_id, pos in existing_positions.items():
+            if pos_id not in incoming_ids:
+                if len(pos.applications) > 0:
+                    db.session.rollback()
+                    return jsonify({'error': f'Cannot delete position "{pos.position_name}" because students have already applied to it.'}), 400
+                db.session.delete(pos)
+
         for p_data in positions_data:
+            pos_id = p_data.get('id')
             pos_name = p_data.get('position_name')
             pos_desc = p_data.get('description')
             min_cgpa = p_data.get('min_cgpa')
@@ -552,19 +598,32 @@ def edit_drive(drive_id):
                 db.session.rollback()
                 return jsonify({'error': 'All job position fields are required.'}), 400
                 
-            new_position = Position()
-            new_position.drive = drive
-            new_position.position_name = pos_name
-            new_position.description = pos_desc
-            new_position.min_cgpa = float(min_cgpa)
-            new_position.branches = branches
-            new_position.salary = int(salary)
-            new_position.skills = skills
-            new_position.location = location
-            new_position.mode = mode
-            db.session.add(new_position)
+            if pos_id and pos_id in existing_positions:
+                pos = existing_positions[pos_id]
+                pos.position_name = pos_name
+                pos.description = pos_desc
+                pos.min_cgpa = float(min_cgpa)
+                pos.branches = branches
+                pos.salary = int(salary)
+                pos.skills = skills
+                pos.location = location
+                pos.mode = mode
+            else:
+                new_position = Position()
+                new_position.drive = drive
+                new_position.position_name = pos_name
+                new_position.description = pos_desc
+                new_position.min_cgpa = float(min_cgpa)
+                new_position.branches = branches
+                new_position.salary = int(salary)
+                new_position.skills = skills
+                new_position.location = location
+                new_position.mode = mode
+                db.session.add(new_position)
             
         db.session.commit()
+        cache.delete('admin_dashboard')
+        cache.delete('student_drives')
         return jsonify({'message': 'Placement drive and job positions updated successfully.', 'drive_id': drive.id}), 200
         
     except ValueError as e:
@@ -572,7 +631,7 @@ def edit_drive(drive_id):
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': 'Failed to update drive. Check your inputs.'}), 500
+        return jsonify({'error': f'Failed to update drive: {str(e)}'}), 500
 
 
 @company_bp.route('/drives/<int:drive_id>', methods=['DELETE'])
@@ -592,8 +651,24 @@ def delete_drive(drive_id):
     try:
         db.session.delete(drive)
         db.session.commit()
+        cache.delete('admin_dashboard')
+        cache.delete('student_drives')
         return jsonify({'message': 'Placement drive deleted successfully.'}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': 'Failed to delete placement drive.'}), 500
 
+
+@company_bp.route('/export', methods=['POST'])
+@company_required
+def export_data():
+    from backend.tasks import export_application_history
+    user_id = session.get('user_id')
+    company = Company.query.filter_by(user_id=user_id).first()
+    email = company.user.email
+    
+    try:
+        task = export_application_history.delay(user_id, 'COMPANY', email)
+        return jsonify({'message': 'Data export started.', 'task_id': task.id}), 200
+    except Exception as e:
+        return jsonify({'error': 'Failed to trigger data export task.'}), 500

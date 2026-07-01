@@ -1,7 +1,8 @@
 export default {
   name: 'AdminDashboard',
   props: {
-    user: Object
+    user: Object,
+    currentRoute: String
   },
   emits: ['navigate'],
   data() {
@@ -26,7 +27,19 @@ export default {
       success: ''
     }
   },
+  watch: {
+    currentRoute(newRoute) {
+      this.syncTabWithRoute(newRoute);
+    }
+  },
   methods: {
+    syncTabWithRoute(route) {
+      if (route === '/admin/companies') this.switchTab('companies');
+      else if (route === '/admin/students') this.switchTab('students');
+      else if (route === '/admin/drives') this.switchTab('drives');
+      else if (route === '/admin/applications') this.switchTab('applications');
+      else this.switchTab('overview');
+    },
     handleNav(route) {
       this.$emit('navigate', route);
     },
@@ -167,17 +180,36 @@ export default {
       else if (tab === 'students') this.fetchStudents();
       else if (tab === 'drives') this.fetchDrives();
       else if (tab === 'applications') this.fetchApplications();
+    },
+    async triggerMonthlyReports() {
+      this.clearMessages();
+      try {
+        const res = await fetch('/admin/reports/trigger', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+          this.success = 'Monthly reports generation triggered successfully.';
+        } else {
+          this.error = data.error || 'Failed to trigger monthly reports.';
+        }
+      } catch (err) {
+        this.error = 'Network error triggering reports.';
+      }
     }
   },
   created() {
-    this.fetchStats();
+    this.syncTabWithRoute(this.currentRoute);
   },
   template: `
     <div class="container my-4">
       <div class="row mb-3">
-        <div class="col">
-          <h2>Placement Cell Admin Dashboard</h2>
-          <p class="text-muted small">Manage students, company approvals, placement drives, and track job applications.</p>
+        <div class="col d-flex justify-content-between align-items-center flex-wrap gap-3">
+          <div>
+            <h2>Placement Cell Admin Dashboard</h2>
+            <p class="text-muted small">Manage students, company approvals, placement drives, and track job applications.</p>
+          </div>
+          <button class="btn btn-sm btn-outline-dark" @click="triggerMonthlyReports()">
+            Generate Monthly Reports
+          </button>
         </div>
       </div>
 
