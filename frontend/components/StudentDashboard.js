@@ -26,7 +26,9 @@ const StudentDashboard = {
       success: '',
       loading: false,
       actionLoadingId: null,
-      exportPolling: null
+      exportPolling: null,
+      chartData: null,
+      charts: {}
     };
   },
   computed: {
@@ -42,8 +44,8 @@ const StudentDashboard = {
       const query = this.searchQuery.toLowerCase();
       return this.drives.filter(d => {
         const matchDrive = d.drive_name.toLowerCase().includes(query) || d.company_name.toLowerCase().includes(query);
-        const matchPosition = d.positions.some(p => 
-          p.position_name.toLowerCase().includes(query) || 
+        const matchPosition = d.positions.some(p =>
+          p.position_name.toLowerCase().includes(query) ||
           p.skills.toLowerCase().includes(query)
         );
         return matchDrive || matchPosition;
@@ -54,14 +56,19 @@ const StudentDashboard = {
     switchTab(tab) {
       this.activeTab = tab;
       this.clearMessages();
-      if (tab === 'overview') {
+      this.refreshData();
+    },
+    refreshData() {
+      if (this.activeTab === 'overview') {
         this.fetchOverviewData();
-      } else if (tab === 'jobs') {
+      } else if (this.activeTab === 'jobs') {
         this.fetchDrives();
-      } else if (tab === 'applications') {
+      } else if (this.activeTab === 'applications') {
         this.fetchApplications();
-      } else if (tab === 'offers') {
+      } else if (this.activeTab === 'offers') {
         this.fetchPlacements();
+      } else if (this.activeTab === 'analytics') {
+        this.fetchChartData();
       }
     },
     clearMessages() {
@@ -187,12 +194,19 @@ const StudentDashboard = {
           return 'bg-secondary text-white';
       }
     },
+    getInterviewBgClass(status) {
+      if (status === 'COMPLETED') return 'bg-success bg-opacity-10 border-success';
+      if (status === 'MISSED') return 'bg-danger bg-opacity-10 border-danger';
+      return 'bg-warning bg-opacity-10 border-warning';
+    },
     syncTabWithRoute(route) {
       if (!route) return;
       if (route.endsWith('/student/applications')) {
         this.switchTab('applications');
       } else if (route.endsWith('/student/dashboard')) {
         this.switchTab('overview');
+      } else if (route.endsWith('/student/analytics')) {
+        this.switchTab('analytics');
       }
     },
     isExpired(deadlineIso) {
@@ -232,14 +246,68 @@ const StudentDashboard = {
           console.error('Polling error', e);
         }
       }, 2000);
+    },
+    async fetchChartData() {
+      try {
+        const res = await fetch('/student/chart-data');
+        if (res.ok) {
+          this.chartData = await res.json();
+          this.$nextTick(() => this.renderCharts());
+        }
+      } catch (err) {
+        console.error('Error fetching chart data:', err);
+      }
+    },
+    renderCharts() {
+      if (!this.chartData) return;
+      const textColor = getComputedStyle(document.documentElement).getPropertyValue('--bs-body-color').trim() || '#dee2e6';
+
+      if (this.charts.status) this.charts.status.destroy();
+      const ctx1 = document.getElementById('studentStatusChart');
+      if (ctx1) {
+        this.charts.status = new Chart(ctx1, {
+          type: 'doughnut',
+          data: {
+            labels: ['Applied', 'Shortlisted', 'Interview', 'Rejected', 'Placed'],
+            datasets: [{
+              data: [
+                this.chartData.application_status.Applied,
+                this.chartData.application_status.Shortlisted,
+                this.chartData.application_status.Interview,
+                this.chartData.application_status.Rejected,
+                this.chartData.application_status.Placed
+              ],
+              backgroundColor: ['#6c757d', '#0dcaf0', '#ffc107', '#dc3545', '#198754']
+            }]
+          },
+          options: { plugins: { legend: { labels: { color: textColor } } } }
+        });
+      }
+
+      if (this.charts.acceptance) this.charts.acceptance.destroy();
+      const ctx2 = document.getElementById('studentAcceptanceChart');
+      if (ctx2) {
+        this.charts.acceptance = new Chart(ctx2, {
+          type: 'bar',
+          data: {
+            labels: this.chartData.company_acceptance.map(c => c.name),
+            datasets: [{ label: 'Acceptance Rate %', data: this.chartData.company_acceptance.map(c => c.rate), backgroundColor: '#0d6efd' }]
+          },
+          options: { scales: { x: { ticks: { color: textColor } }, y: { ticks: { color: textColor }, max: 100 } }, plugins: { legend: { labels: { color: textColor } } } }
+        });
+      }
     }
   },
   unmounted() {
     if (this.exportPolling) clearInterval(this.exportPolling);
+    if (this.pollingInterval) clearInterval(this.pollingInterval);
+    Object.values(this.charts).forEach(c => c && c.destroy());
   },
   created() {
-    this.fetchOverviewData();
     this.syncTabWithRoute(this.currentRoute);
+    this.pollingInterval = setInterval(() => {
+      this.refreshData();
+    }, 60000);
   },
   template: `
     <div>
@@ -254,21 +322,28 @@ const StudentDashboard = {
           <button class="btn btn-sm btn-outline-dark" @click="exportData()">
             Export Data
           </button>
-          <button class="btn btn-sm" :class="activeTab === 'overview' ? 'btn-dark' : 'btn-outline-secondary'" @click="switchTab('overview')">
-            Overview
-          </button>
-          <button class="btn btn-sm" :class="activeTab === 'jobs' ? 'btn-dark' : 'btn-outline-secondary'" @click="switchTab('jobs')">
-            Job Postings
-          </button>
-          <button class="btn btn-sm" :class="activeTab === 'applications' ? 'btn-dark' : 'btn-outline-secondary'" @click="switchTab('applications')">
-            Applications
-          </button>
-          <button class="btn btn-sm" :class="activeTab === 'offers' ? 'btn-dark' : 'btn-outline-secondary'" @click="switchTab('offers')">
-            Offers
-          </button>
-        </div>
         </div>
       </div>
+
+      <!-- Navigation Tabs -->
+      <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+          <button class="nav-link" :class="{ active: activeTab === 'overview' }" @click="switchTab('overview')">Overview</button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" :class="{ active: activeTab === 'jobs' }" @click="switchTab('jobs')">Job Postings</button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" :class="{ active: activeTab === 'applications' }" @click="switchTab('applications')">Applications</button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" :class="{ active: activeTab === 'offers' }" @click="switchTab('offers')">Offers</button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" :class="{ active: activeTab === 'analytics' }" @click="switchTab('analytics')">Analytics</button>
+        </li>
+      </ul>
+
 
       <!-- Alerts -->
       <div v-if="success" class="alert alert-success py-2 rounded-0" role="alert">
@@ -287,28 +362,28 @@ const StudentDashboard = {
           <div class="col-12">
             <div class="row g-3">
               <div class="col-md-3 col-sm-6">
-                <div class="border p-3 bg-light">
+                <div class="border p-3 bg-body-tertiary">
                   <span class="text-muted small">Jobs Applied</span>
                   <h4 class="fw-bold mb-0">{{ stats.totalApplied }}</h4>
                 </div>
               </div>
 
               <div class="col-md-3 col-sm-6">
-                <div class="border p-3 bg-light">
+                <div class="border p-3 bg-body-tertiary">
                   <span class="text-muted small">Shortlisted / Interview</span>
                   <h4 class="fw-bold mb-0">{{ stats.shortlisted }}</h4>
                 </div>
               </div>
 
               <div class="col-md-3 col-sm-6">
-                <div class="border p-3 bg-light">
+                <div class="border p-3 bg-body-tertiary">
                   <span class="text-muted small">Total Offers</span>
                   <h4 class="fw-bold mb-0">{{ stats.offers }}</h4>
                 </div>
               </div>
 
               <div class="col-md-3 col-sm-6">
-                <div class="border p-3" :class="stats.placed ? 'bg-success text-white' : 'bg-light'">
+                <div class="border p-3" :class="stats.placed ? 'bg-success text-white' : 'bg-body-tertiary'">
                   <span class="small" :class="stats.placed ? 'text-white' : 'text-muted'">Placement Status</span>
                   <h4 class="fw-bold mb-0">{{ stats.placed ? 'PLACED' : 'Not Placed' }}</h4>
                   <span class="small" v-if="stats.placed">at {{ stats.placedCompany }}</span>
@@ -327,19 +402,19 @@ const StudentDashboard = {
                 <div v-if="loading" class="text-center py-4">
                   <div class="spinner-border text-primary" role="status"></div>
                 </div>
-                <div v-else-if="interviews.length === 0" class="text-center py-4 text-muted small border bg-light">
+                <div v-else-if="interviews.length === 0" class="text-center py-4 text-muted small border bg-body-tertiary">
                   No interviews scheduled yet.
                 </div>
-                <div v-else class="list-group list-group-flush">
-                  <div v-for="i in interviews" :key="i.id" class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div>
-                      <strong>{{ i.company_name }} &bull; {{ i.position_name }}</strong>
-                      <div class="text-muted small">
-                        Time: {{ i.start_time }} ({{ i.duration }} mins) | Mode: {{ i.location }}
+                <div v-else class="list-group list-group-flush border-0">
+                  <div v-for="i in interviews" :key="i.id" class="p-3 border rounded-0 mb-2" :class="getInterviewBgClass(i.status)">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                      <div>
+                        <strong>{{ i.company_name }} &bull; {{ i.position_name }} <span class="small badge ms-1 border" :class="i.status === 'COMPLETED' ? 'text-success border-success' : (i.status === 'MISSED' ? 'text-danger border-danger' : 'text-warning border-warning')">{{ i.status }}</span></strong>
+                        <div class="text-muted small mt-1">
+                          Time: {{ i.start_time }} ({{ i.duration }} mins) | Mode: {{ i.location }}
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <a v-if="i.meeting_link" :href="i.meeting_link" target="_blank" class="btn btn-xs btn-dark py-1 px-3 small">
+                      <a v-if="i.meeting_link && i.status !== 'COMPLETED' && i.status !== 'MISSED'" :href="i.meeting_link" target="_blank" class="btn btn-xs btn-dark py-1 px-3 small">
                         Join Meeting
                       </a>
                     </div>
@@ -359,14 +434,14 @@ const StudentDashboard = {
                 <div v-if="placements.length === 0" class="text-center py-3 text-muted small">
                   No job offers received yet.
                 </div>
-                <div v-else class="list-group list-group-flush">
-                  <div v-for="p in placements" :key="p.id" class="list-group-item px-0 py-2 border-0 d-flex justify-content-between align-items-center">
+                <div v-else class="list-group list-group-flush border-0">
+                  <div v-for="p in placements" :key="p.id" class="p-3 border border-success rounded bg-success bg-opacity-10 mb-2 d-flex justify-content-between align-items-center shadow-sm">
                     <div>
-                      <strong>{{ p.company_name }}</strong>
-                      <div class="text-muted small">{{ p.position_name }}</div>
+                      <strong class="text-success-emphasis fs-6">🎉 {{ p.company_name }}</strong>
+                      <div class="text-success small opacity-75 fw-semibold mt-1">{{ p.position_name }}</div>
                     </div>
-                    <button class="btn btn-xs btn-outline-dark" @click="switchTab('offers')">
-                      View
+                    <button class="btn btn-sm btn-success" @click="switchTab('offers')">
+                      View Offer
                     </button>
                   </div>
                 </div>
@@ -390,17 +465,17 @@ const StudentDashboard = {
           </div>
 
           <!-- Empty list state -->
-          <div v-else-if="filteredDrives.length === 0" class="text-center py-4 border bg-white text-muted small">
+          <div v-else-if="filteredDrives.length === 0" class="text-center py-4 border bg-body-tertiary text-muted small">
             No placement drives found matching your search.
           </div>
 
           <!-- Job Listing -->
           <div v-else class="row g-3">
             <div v-for="d in filteredDrives" :key="d.id" class="col-12">
-              <div class="card bg-light">
-                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2 bg-transparent">
+              <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2 bg-primary-subtle border-bottom-0">
                   <div>
-                    <strong class="text-dark fs-5">{{ d.company_name }} - {{ d.drive_name }}</strong>
+                    <strong class="fs-5 text-primary-emphasis">{{ d.company_name }} - {{ d.drive_name }}</strong>
                     <div class="text-muted small">{{ d.description }}</div>
                   </div>
                   <div class="text-end">
@@ -410,13 +485,13 @@ const StudentDashboard = {
                 </div>
                 
                 <!-- Drive Positions -->
-                <div class="card-body bg-white border-top">
+                <div class="card-body bg-body-tertiary border-top">
                   <span class="small fw-bold text-muted d-block mb-2">Job Openings:</span>
                   <div class="row g-3">
                     <div v-for="p in d.positions" :key="p.id" class="col-12 col-md-6">
-                      <div class="border p-3 bg-light h-100 d-flex flex-column justify-content-between">
+                      <div class="border border-primary-subtle rounded p-3 bg-primary-subtle h-100 d-flex flex-column justify-content-between">
                         <div>
-                          <strong class="text-dark">{{ p.position_name }}</strong>
+                          <strong>{{ p.position_name }}</strong>
                           <p class="text-muted small mt-1 mb-2">{{ p.description }}</p>
                           
                           <div class="small text-muted mb-2">
@@ -432,9 +507,12 @@ const StudentDashboard = {
                         </div>
 
                         <!-- Apply Button -->
-                        <div class="d-grid mt-2 border-top pt-2">
+                        <div class="d-grid mt-2 border-top border-primary-subtle pt-2">
                           <button v-if="hasApplied(p.id)" class="btn btn-sm btn-secondary" disabled>
                             Applied
+                          </button>
+                          <button v-else-if="isExpired(d.raw_deadline)" class="btn btn-sm btn-secondary opacity-75" disabled>
+                            Deadline Over
                           </button>
                           <button v-else class="btn btn-sm btn-dark" @click="applyToJob(p.id)" :disabled="actionLoadingId === p.id || stats.placed" :title="stats.placed ? 'You have already accepted a placement offer' : ''">
                             <span v-if="actionLoadingId === p.id" class="spinner-border spinner-border-sm me-2" role="status"></span>
@@ -456,7 +534,7 @@ const StudentDashboard = {
             <div class="spinner-border text-primary" role="status"></div>
           </div>
           
-          <div v-else-if="applications.length === 0" class="text-center py-4 border bg-white text-muted small">
+          <div v-else-if="applications.length === 0" class="text-center py-4 border bg-body-tertiary text-muted small">
             No applications recorded yet. Browse job postings to apply.
           </div>
 
@@ -465,7 +543,7 @@ const StudentDashboard = {
               <div class="card p-3">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <div>
-                    <strong class="text-dark">{{ a.position.company_name }} - {{ a.position.position_name }}</strong>
+                    <strong>{{ a.position.company_name }} - {{ a.position.position_name }}</strong>
                     <div class="text-muted small">
                       Applied: {{ a.applied_at }} | CTC: INR {{ a.position.salary }} | Location: {{ a.position.location }}
                     </div>
@@ -476,20 +554,24 @@ const StudentDashboard = {
                 </div>
 
                 <!-- Feedback -->
-                <div v-if="a.feedback" class="mt-2 p-2 bg-light small border">
+                <div v-if="a.feedback" class="mt-2 p-2 bg-body-tertiary small border">
                   <strong>Feedback:</strong> {{ a.feedback }}
                 </div>
 
                 <!-- Interviews for this Application -->
-                <div v-if="a.interviews && a.interviews.length > 0" class="mt-2 p-2 border bg-warning bg-opacity-10 rounded-0">
-                  <strong class="small text-dark">Scheduled Interview:</strong>
-                  <div v-for="i in a.interviews" :key="i.id" class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-1">
-                    <span class="small text-muted">
-                      Time: {{ i.start_time }} ({{ i.duration }} mins) | Mode: {{ i.location }}
-                    </span>
-                    <a v-if="i.meeting_link" :href="i.meeting_link" target="_blank" class="btn btn-xs btn-dark py-0.5 px-2 small">
-                      Join Meet
-                    </a>
+                <div v-if="a.interviews && a.interviews.length > 0" class="mt-2">
+                  <div v-for="i in a.interviews" :key="i.id" class="p-2 border rounded-0 mb-1" :class="getInterviewBgClass(i.status)">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                      <div>
+                        <strong class="small">Scheduled Interview ({{ i.status }}):</strong>
+                        <div class="small text-muted mt-1">
+                          Time: {{ i.start_time }} ({{ i.duration }} mins) | Mode: {{ i.location }}
+                        </div>
+                      </div>
+                      <a v-if="i.meeting_link && i.status !== 'COMPLETED' && i.status !== 'MISSED'" :href="i.meeting_link" target="_blank" class="btn btn-xs btn-dark py-0.5 px-2 small">
+                        Join Meet
+                      </a>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -503,7 +585,7 @@ const StudentDashboard = {
             <div class="spinner-border text-primary" role="status"></div>
           </div>
 
-          <div v-else-if="placements.length === 0" class="text-center py-4 border bg-white text-muted small">
+          <div v-else-if="placements.length === 0" class="text-center py-4 border bg-body-tertiary text-muted small">
             No employment offers received yet.
           </div>
 
@@ -521,12 +603,12 @@ const StudentDashboard = {
                     </span>
                   </div>
 
-                  <div class="p-3 bg-light border mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+                  <div class="p-3 bg-body-tertiary border mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div>
                       <h6 class="mb-0">Employment Offer Letter Document</h6>
                       <span class="text-muted small">Official package details</span>
                     </div>
-                    <a :href="p.offer_letter_path" target="_blank" download class="btn btn-sm btn-outline-dark">
+                    <a :href="p.offer_letter_path" target="_blank" download class="btn btn-sm btn-outline-secondary">
                       Download Offer Letter PDF
                     </a>
                   </div>
@@ -552,6 +634,24 @@ const StudentDashboard = {
                     You have <strong>{{ p.status.toLowerCase() }}</strong> this offer.
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ANALYTICS TAB -->
+        <div v-if="activeTab === 'analytics'">
+          <div class="row g-4">
+            <div class="col-md-6">
+              <div class="card p-3 border">
+                <h6 class="text-muted small mb-3">Application Status</h6>
+                <canvas id="studentStatusChart" height="250"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card p-3 border">
+                <h6 class="text-muted small mb-3">Company Acceptance Rates</h6>
+                <canvas id="studentAcceptanceChart" height="250"></canvas>
               </div>
             </div>
           </div>

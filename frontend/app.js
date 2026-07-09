@@ -26,7 +26,8 @@ const app = createApp({
       isAuthenticated: false,
       user: null,
       loading: true,
-      theme: localStorage.getItem('theme') || 'light'
+      theme: localStorage.getItem('theme') || 'light',
+      publicStats: { placed_students: 0, active_drives: 0, total_companies: 0, top_companies: [], top_students: [] }
     }
   },
   watch: {
@@ -55,7 +56,7 @@ const app = createApp({
         this.user = null;
         try {
           await fetch('/auth/logout', { method: 'POST' });
-        } catch (e) {}
+        } catch (e) { }
         this.loading = false;
         this.checkRouteProtection();
         return;
@@ -98,6 +99,14 @@ const app = createApp({
       this.isAuthenticated = true;
       this.user = userData;
     },
+    async fetchPublicStats() {
+      try {
+        const res = await fetch('/auth/public-stats');
+        if (res.ok) this.publicStats = await res.json();
+      } catch (err) {
+        console.error('Error fetching public stats:', err);
+      }
+    },
     redirectToDashboard() {
       if (!this.user) return;
       if (this.user.role === 'STUDENT') this.navigate('/student/dashboard');
@@ -135,6 +144,7 @@ const app = createApp({
     this.applyTheme();
     // Sync initial session on mount
     this.checkSession();
+    this.fetchPublicStats();
 
     // Listen to hash changes
     window.addEventListener('hashchange', () => {
@@ -174,13 +184,69 @@ const app = createApp({
       
       <main v-else class="container my-4">
         <!-- Landing Page -->
-        <div v-if="currentRoute === '/'" class="row justify-content-center my-5">
-          <div class="col-12 col-md-8 text-center p-4 border rounded">
-            <h1 class="fw-bold">Placement Portal</h1>
-            <p class="text-muted">A minimal and clean platform to coordinate campus placements, interview drives, and student records.</p>
-            <div class="mt-4">
-              <button class="btn btn-primary me-2" @click="navigate('/login')">Get Started</button>
-              <button class="btn btn-outline-secondary" @click="navigate('/register/student')">Student Sign Up</button>
+        <div v-if="currentRoute === '/'" class="my-5">
+          <div class="row justify-content-center">
+            <div class="col-12 col-md-10 text-center p-4 border rounded bg-body">
+              <h1 class="fw-bold mb-3">Placement Portal</h1>
+              <p class="text-muted fs-5">A minimal and clean platform to coordinate campus placements, interview drives, and student records.</p>
+              
+              <div class="row g-4 my-4 justify-content-center">
+                <div class="col-md-4 col-sm-6">
+                  <div class="p-3 border rounded bg-body-tertiary shadow-sm">
+                    <h2 class="fw-bold mb-1 text-primary">{{ publicStats.placed_students }}+</h2>
+                    <span class="small text-uppercase fw-semibold">Students Placed</span>
+                  </div>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                  <div class="p-3 border rounded bg-body-tertiary shadow-sm">
+                    <h2 class="fw-bold mb-1 text-success">{{ publicStats.active_drives }}+</h2>
+                    <span class="small text-uppercase fw-semibold">Active Drives</span>
+                  </div>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                  <div class="p-3 border rounded bg-body-tertiary shadow-sm">
+                    <h2 class="fw-bold mb-1 text-warning">{{ publicStats.total_companies }}+</h2>
+                    <span class="small text-uppercase fw-semibold">Top Companies</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-4 mb-2">
+                <button class="btn btn-primary me-2 px-4 py-2 fw-semibold" @click="navigate('/login')">Get Started</button>
+                <button class="btn btn-outline-secondary px-4 py-2 fw-semibold" @click="navigate('/register/student')">Student Sign Up</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="row mt-5 g-4 justify-content-center">
+            <div class="col-md-5">
+              <div v-if="publicStats.top_students && publicStats.top_students.length > 0">
+                <h5 class="fw-bold text-muted mb-3 text-center">Top Placements</h5>
+                <div class="list-group list-group-flush border rounded text-start shadow-sm">
+                  <div v-for="(student, index) in publicStats.top_students" :key="'s'+index" class="list-group-item d-flex justify-content-between align-items-center p-3 bg-body-tertiary">
+                    <div>
+                      <h6 class="mb-0 fw-bold">{{ student.name }}</h6>
+                      <small class="text-muted">Placed at: <span class="fw-semibold">{{ student.company }}</span></small>
+                    </div>
+                    <span class="badge bg-success rounded-pill px-3 py-2 fs-6">{{ student.package }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md-5">
+              <div v-if="publicStats.top_companies && publicStats.top_companies.length > 0">
+                <h5 class="fw-bold text-muted mb-3 text-center">Top Hiring Partners</h5>
+                <div class="list-group list-group-flush border rounded text-start shadow-sm">
+                  <div v-for="(comp, index) in publicStats.top_companies" :key="'c'+index" class="list-group-item d-flex justify-content-between align-items-center p-3 bg-body-tertiary">
+                    <div>
+                      <h6 class="mb-0 fw-bold">{{ comp.name }}</h6>
+                      <small class="text-muted">Highest Package: <span class="fw-semibold">{{ comp.package }}</span></small>
+                    </div>
+                    <span class="badge bg-info rounded-pill px-3 py-2">{{ comp.acceptance_rate }}% Acceptance</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

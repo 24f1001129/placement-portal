@@ -59,7 +59,9 @@ export default {
       error: '',
       success: '',
       loading: false,
-      exportPolling: null
+      exportPolling: null,
+      chartData: null,
+      charts: {}
     }
   },
   computed: {
@@ -84,6 +86,7 @@ export default {
       if (route === '/company/drives') this.switchTab('drives');
       else if (route === '/company/applicants') this.switchTab('applicants');
       else if (route === '/company/interviews') this.switchTab('interviews');
+      else if (route === '/company/analytics') this.switchTab('analytics');
       else this.switchTab('overview');
     },
     clearMessages() {
@@ -158,7 +161,7 @@ export default {
     startEditDrive(drive) {
       this.clearMessages();
       this.editingDriveId = drive.id;
-      
+
       let formattedDeadline = '';
       if (drive.raw_deadline) {
         formattedDeadline = drive.raw_deadline.replace(' ', 'T');
@@ -308,7 +311,7 @@ export default {
     async submitInterview() {
       if (!this.interviewAppId) return;
       this.loading = true;
-      
+
       const payload = {
         application_id: this.interviewAppId,
         ...this.newInterview,
@@ -367,12 +370,88 @@ export default {
         this.loading = false;
       }
     },
+    getStatusBadgeClass(status) {
+      switch (status) {
+        case 'PLACED':
+        case 'ACCEPTED':
+          return 'bg-success text-white';
+        case 'SHORTLISTED':
+        case 'INTERVIEW':
+          return 'bg-warning text-dark';
+        case 'REJECTED':
+          return 'bg-danger text-white';
+        default:
+          return 'bg-secondary text-white';
+      }
+    },
     switchTab(tab) {
       this.activeTab = tab;
       this.clearMessages();
-      if (tab === 'drives') this.fetchDrives();
-      else if (tab === 'applicants') this.fetchApplications();
-      else if (tab === 'interviews') this.fetchInterviews();
+      this.refreshData();
+    },
+    refreshData() {
+      if (this.activeTab === 'overview') {
+        this.fetchDrives();
+        this.fetchApplications();
+        this.fetchInterviews();
+      }
+      else if (this.activeTab === 'drives') this.fetchDrives();
+      else if (this.activeTab === 'applicants') this.fetchApplications();
+      else if (this.activeTab === 'interviews') this.fetchInterviews();
+      else if (this.activeTab === 'analytics') this.fetchChartData();
+    },
+    async fetchChartData() {
+      try {
+        const res = await fetch('/company/chart-data');
+        if (res.ok) {
+          this.chartData = await res.json();
+          this.$nextTick(() => this.renderCharts());
+        }
+      } catch (err) {
+        console.error('Error fetching chart data:', err);
+      }
+    },
+    renderCharts() {
+      if (!this.chartData) return;
+      const textColor = getComputedStyle(document.documentElement).getPropertyValue('--bs-body-color').trim() || '#dee2e6';
+
+      if (this.charts.funnel) this.charts.funnel.destroy();
+      const ctx1 = document.getElementById('companyFunnelChart');
+      if (ctx1) {
+        this.charts.funnel = new Chart(ctx1, {
+          type: 'bar',
+          data: {
+            labels: ['Applied', 'Shortlisted', 'Interview', 'Placed'],
+            datasets: [{
+              label: 'Applicants',
+              data: [
+                this.chartData.application_funnel.Applied,
+                this.chartData.application_funnel.Shortlisted,
+                this.chartData.application_funnel.Interview,
+                this.chartData.application_funnel.Placed
+              ],
+              backgroundColor: ['#6c757d', '#0dcaf0', '#ffc107', '#198754']
+            }]
+          },
+          options: { scales: { x: { ticks: { color: textColor } }, y: { ticks: { color: textColor } } }, plugins: { legend: { labels: { color: textColor } } } }
+        });
+      }
+
+      if (this.charts.positions) this.charts.positions.destroy();
+      const ctx2 = document.getElementById('companyPositionChart');
+      if (ctx2) {
+        this.charts.positions = new Chart(ctx2, {
+          type: 'pie',
+          data: {
+            labels: this.chartData.position_popularity.map(p => p.name),
+            datasets: [{
+              data: this.chartData.position_popularity.map(p => p.applications),
+              backgroundColor: ['#0d6efd', '#6610f2', '#6f42c1', '#d63384', '#fd7e14', '#20c997']
+            }]
+          },
+          options: { plugins: { legend: { labels: { color: textColor } } } }
+        });
+      }
     },
     async exportData() {
       this.clearMessages();
@@ -411,9 +490,14 @@ export default {
   },
   unmounted() {
     if (this.exportPolling) clearInterval(this.exportPolling);
+    if (this.pollingInterval) clearInterval(this.pollingInterval);
+    Object.values(this.charts).forEach(c => c && c.destroy());
   },
   created() {
     this.syncTabWithRoute(this.currentRoute);
+    this.pollingInterval = setInterval(() => {
+      this.refreshData();
+    }, 60000);
   },
   template: `
     <div class="container my-4">
@@ -423,7 +507,7 @@ export default {
             <h2 class="fw-light">Recruiter Dashboard</h2>
             <p class="text-muted small">Post placement drives and manage applications and interviews.</p>
           </div>
-          <button class="btn btn-sm btn-outline-dark" @click="exportData()">
+          <button class="btn btn-sm btn-outline-secondary" @click="exportData()">
             Export Data
           </button>
         </div>
@@ -432,16 +516,19 @@ export default {
       <!-- Navigation Tabs (Minimal Design) -->
       <ul class="nav nav-tabs mb-4 border-bottom-0">
         <li class="nav-item">
-          <button class="nav-link border-0" :class="{ 'fw-bold text-dark border-bottom border-dark border-2': activeTab === 'overview', 'text-muted': activeTab !== 'overview' }" @click="switchTab('overview')">Overview</button>
+          <button class="nav-link border-0" :class="{ 'fw-bold text-primary border-bottom border-primary border-2': activeTab === 'overview', 'text-muted': activeTab !== 'overview' }" @click="switchTab('overview')">Overview</button>
         </li>
         <li class="nav-item">
-          <button class="nav-link border-0" :class="{ 'fw-bold text-dark border-bottom border-dark border-2': activeTab === 'drives', 'text-muted': activeTab !== 'drives' }" @click="switchTab('drives')">Placement Drives</button>
+          <button class="nav-link border-0" :class="{ 'fw-bold text-primary border-bottom border-primary border-2': activeTab === 'drives', 'text-muted': activeTab !== 'drives' }" @click="switchTab('drives')">Placement Drives</button>
         </li>
         <li class="nav-item">
-          <button class="nav-link border-0" :class="{ 'fw-bold text-dark border-bottom border-dark border-2': activeTab === 'applicants', 'text-muted': activeTab !== 'applicants' }" @click="switchTab('applicants')">Applicants</button>
+          <button class="nav-link border-0" :class="{ 'fw-bold text-primary border-bottom border-primary border-2': activeTab === 'applicants', 'text-muted': activeTab !== 'applicants' }" @click="switchTab('applicants')">Applicants</button>
         </li>
         <li class="nav-item">
-          <button class="nav-link border-0" :class="{ 'fw-bold text-dark border-bottom border-dark border-2': activeTab === 'interviews', 'text-muted': activeTab !== 'interviews' }" @click="switchTab('interviews')">Interviews</button>
+          <button class="nav-link border-0" :class="{ 'fw-bold text-primary border-bottom border-primary border-2': activeTab === 'interviews', 'text-muted': activeTab !== 'interviews' }" @click="switchTab('interviews')">Interviews</button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link border-0" :class="{ 'fw-bold text-primary border-bottom border-primary border-2': activeTab === 'analytics', 'text-muted': activeTab !== 'analytics' }" @click="switchTab('analytics')">Analytics</button>
         </li>
       </ul>
 
@@ -452,7 +539,7 @@ export default {
       <!-- Overview Tab -->
       <div v-if="activeTab === 'overview'" class="row g-3">
         <div class="col-md-12">
-          <div class="border p-4 bg-light">
+          <div class="border p-4 bg-body-tertiary">
             <h4 class="fw-normal mb-3">Welcome, {{ user?.name }}</h4>
             <p class="text-muted small">You are logged in as a verified recruiter. Please use the navigation tabs to configure placement events.</p>
             <div class="mt-4 pt-2 border-top">
@@ -468,7 +555,7 @@ export default {
           <!-- Left side: List drives -->
           <div class="col-lg-6">
             <h5 class="fw-normal mb-3">Your Placement Drives</h5>
-            <div v-for="d in drives" :key="d.id" class="border p-3 mb-3 bg-light">
+            <div v-for="d in drives" :key="d.id" class="border p-3 mb-3 bg-body-tertiary">
               <div class="d-flex justify-content-between align-items-start">
                 <h6 class="mb-1">{{ d.drive_name }}</h6>
                 <span class="badge rounded-0 py-1" :class="d.status === 'APPROVED' ? 'bg-success-subtle text-success border border-success' : (d.status === 'REJECTED' ? 'bg-danger-subtle text-danger border border-danger' : 'bg-warning-subtle text-warning border border-warning')">
@@ -496,14 +583,14 @@ export default {
                 </ul>
               </div>
             </div>
-            <div v-if="drives.length === 0" class="text-muted small py-4 text-center border bg-light">
+            <div v-if="drives.length === 0" class="text-muted small py-4 text-center border bg-body-tertiary">
               No placement drives registered yet.
             </div>
           </div>
 
           <!-- Right side: Create/Edit drive form -->
           <div class="col-lg-6">
-            <form @submit.prevent="submitDrive" class="border p-4 bg-light">
+            <form @submit.prevent="submitDrive" class="border p-4 bg-body-tertiary">
               <h5 class="fw-normal mb-3">{{ editingDriveId ? 'Edit Placement Drive' : 'Create Placement Drive' }}</h5>
               
               <div class="mb-3">
@@ -527,7 +614,7 @@ export default {
 
               <!-- Positions list -->
               <h6 class="fw-normal mt-4 mb-2 pb-1 border-bottom">Positions Under Drive</h6>
-              <div v-for="(pos, index) in newDrive.positions" :key="index" class="border p-3 mb-3 bg-white">
+              <div v-for="(pos, index) in newDrive.positions" :key="index" class="border p-3 mb-3 bg-body-tertiary">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <span class="small fw-semibold text-muted">Position #{{ index + 1 }}</span>
                   <button v-if="newDrive.positions.length > 1" type="button" class="btn btn-xs btn-outline-danger py-0 px-2 rounded-0" style="font-size: 0.75rem;" @click="removePositionForm(index)">Remove</button>
@@ -608,7 +695,7 @@ export default {
         </div>
 
         <!-- Applicants Table -->
-        <div class="table-responsive border bg-light p-3">
+        <div class="table-responsive border bg-body-tertiary p-3">
           <table class="table table-sm align-middle small table-hover">
             <thead>
               <tr class="border-bottom text-muted">
@@ -637,15 +724,15 @@ export default {
                 </td>
                 <td>
                   <div class="d-flex gap-2 flex-wrap">
-                    <a :href="a.student.github_url" target="_blank" class="small text-decoration-none text-dark border-bottom border-dark">GitHub</a>
-                    <a :href="a.student.linkedin_url" target="_blank" class="small text-decoration-none text-dark border-bottom border-dark">LinkedIn</a>
+                    <a :href="a.student.github_url" target="_blank" class="small text-decoration-none text-secondary border-bottom border-secondary">GitHub</a>
+                    <a :href="a.student.linkedin_url" target="_blank" class="small text-decoration-none text-secondary border-bottom border-secondary">LinkedIn</a>
                     <a v-if="a.student.resume_path" :href="a.student.resume_path" target="_blank" class="small text-decoration-none text-success border-bottom border-success fw-bold">Resume PDF</a>
                     <span v-else class="text-muted small">No Resume</span>
                   </div>
                 </td>
                 <td>{{ a.applied_at }}</td>
                 <td>
-                  <span class="badge rounded-0 py-1" :class="a.status === 'PLACED' ? 'bg-success' : (a.status === 'REJECTED' ? 'bg-danger' : (a.status === 'SHORTLISTED' ? 'bg-primary' : (a.status === 'INTERVIEW' ? 'bg-info text-dark' : 'bg-secondary')))">
+                  <span class="badge rounded-0 py-1" :class="getStatusBadgeClass(a.status)">
                     {{ a.status }}
                   </span>
                   <div v-if="a.feedback" class="text-muted small mt-1" style="font-size: 0.75rem;">
@@ -656,7 +743,7 @@ export default {
                   <div class="d-flex gap-1 flex-wrap">
                     <!-- Shortlist / Reject Actions -->
                     <template v-if="a.status === 'DRAFT' || a.status === 'APPLIED'">
-                      <button class="btn btn-xs btn-outline-dark rounded-0 py-0.5 px-2" style="font-size: 0.75rem;" @click="openStatusModal(a.id, 'SHORTLISTED')">Shortlist</button>
+                      <button class="btn btn-xs btn-outline-secondary rounded-0 py-0.5 px-2" style="font-size: 0.75rem;" @click="openStatusModal(a.id, 'SHORTLISTED')">Shortlist</button>
                       <button class="btn btn-xs btn-outline-danger rounded-0 py-0.5 px-2" style="font-size: 0.75rem;" @click="openStatusModal(a.id, 'REJECTED')">Reject</button>
                     </template>
 
@@ -670,6 +757,11 @@ export default {
                       <button class="btn btn-xs btn-success rounded-0 py-0.5 px-2" style="font-size: 0.75rem;" @click="openSelectionForm(a.id)">Offer Job (Select)</button>
                       <button class="btn btn-xs btn-outline-danger rounded-0 py-0.5 px-2" style="font-size: 0.75rem;" @click="openStatusModal(a.id, 'REJECTED')">Reject</button>
                     </template>
+
+                    <!-- Completed Process -->
+                    <template v-if="!['DRAFT', 'APPLIED', 'SHORTLISTED', 'INTERVIEW'].includes(a.status)">
+                      <span class="text-muted" style="font-size: 0.75rem;">No actions required</span>
+                    </template>
                   </div>
                 </td>
               </tr>
@@ -681,7 +773,7 @@ export default {
         </div>
 
         <!-- Inline Form Panels for Actions -->
-        <div v-if="actionAppId" class="border p-4 bg-light mt-4">
+        <div v-if="actionAppId" class="border p-4 bg-body-tertiary mt-4">
           <h6 class="fw-normal mb-3">Provide Feedback for {{ actionStatus }} Candidate</h6>
           <div class="mb-3">
             <label class="form-label small text-muted">Feedback / Reason</label>
@@ -693,7 +785,7 @@ export default {
           </div>
         </div>
 
-        <div v-if="interviewAppId" class="border p-4 bg-light mt-4">
+        <div v-if="interviewAppId" class="border p-4 bg-body-tertiary mt-4">
           <h6 class="fw-normal mb-3">Schedule Candidate Interview</h6>
           <div class="row g-2 mb-3">
             <div class="col-md-6">
@@ -719,7 +811,7 @@ export default {
           </div>
         </div>
 
-        <div v-if="selectAppId" class="border p-4 bg-light mt-4">
+        <div v-if="selectAppId" class="border p-4 bg-body-tertiary mt-4">
           <h6 class="fw-normal mb-3">Process Final Placement Selection</h6>
           <p class="small text-muted mb-3">Selecting this candidate will automatically generate their offer letter and place them in the company system.</p>
           <div class="row g-2 mb-3">
@@ -742,7 +834,7 @@ export default {
       <!-- Interviews Tab -->
       <div v-else-if="activeTab === 'interviews'">
         <h5 class="fw-normal mb-3">Scheduled Recruitment Interviews</h5>
-        <div class="table-responsive border bg-light p-3">
+        <div class="table-responsive border bg-body-tertiary p-3">
           <table class="table table-sm align-middle small table-hover">
             <thead>
               <tr class="border-bottom text-muted">
@@ -763,11 +855,11 @@ export default {
                 <td>{{ i.duration }} mins</td>
                 <td>{{ i.location }}</td>
                 <td>
-                  <a v-if="i.meeting_link" :href="i.meeting_link" target="_blank" class="small text-decoration-none text-dark border-bottom border-dark">Join Meet</a>
+                  <a v-if="i.meeting_link" :href="i.meeting_link" target="_blank" class="small text-decoration-none text-secondary border-bottom border-secondary">Join Meet</a>
                   <span v-else class="text-muted small">None</span>
                 </td>
                 <td>
-                  <span class="badge rounded-0 py-1" :class="i.status === 'COMPLETED' ? 'bg-secondary' : 'bg-primary'">
+                  <span class="badge rounded-0 py-1" :class="i.status === 'COMPLETED' ? 'bg-success' : (i.status === 'MISSED' ? 'bg-danger' : 'bg-warning text-dark')">
                     {{ i.status }}
                   </span>
                 </td>
@@ -777,6 +869,24 @@ export default {
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Analytics Tab -->
+      <div v-else-if="activeTab === 'analytics'">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="card p-3 border">
+              <h6 class="text-muted small mb-3">Application Funnel</h6>
+              <canvas id="companyFunnelChart" height="250"></canvas>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card p-3 border">
+              <h6 class="text-muted small mb-3">Position Popularity</h6>
+              <canvas id="companyPositionChart" height="250"></canvas>
+            </div>
+          </div>
         </div>
       </div>
     </div>

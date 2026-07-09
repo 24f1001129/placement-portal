@@ -6,7 +6,8 @@ body {
 }
 
 /* Neat layout panels instead of glass panels */
-.glass-panel, .card-premium {
+.glass-panel,
+.card-premium {
     background-color: var(--bs-body-bg);
     border: 1px solid var(--bs-border-color);
     border-radius: 4px;
@@ -35,7 +36,6 @@ body {
 }
 
 .form-select-premium {
-    composes: form-control-premium;
     background-color: var(--bs-body-bg) !important;
     border: 1px solid var(--bs-border-color) !important;
     color: var(--bs-body-color) !important;
@@ -115,4 +115,27 @@ body {
     background: none !important;
     color: var(--bs-body-color) !important;
     -webkit-text-fill-color: initial !important;
+}
+
+/* Dark mode specific adjustments */
+[data-bs-theme="dark"] .table-striped>tbody>tr:nth-of-type(odd)>* {
+    --bs-table-bg-type: rgba(255, 255, 255, 0.03);
+}
+
+[data-bs-theme="dark"] .badge-pending {
+    background-color: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+    border-color: rgba(255, 193, 7, 0.3);
+}
+
+[data-bs-theme="dark"] .badge-approved {
+    background-color: rgba(25, 135, 84, 0.2);
+    color: #198754;
+    border-color: rgba(25, 135, 84, 0.3);
+}
+
+[data-bs-theme="dark"] .badge-rejected {
+    background-color: rgba(220, 53, 69, 0.2);
+    color: #dc3545;
+    border-color: rgba(220, 53, 69, 0.3);
 }

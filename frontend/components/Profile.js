@@ -133,7 +133,7 @@ const Profile = {
                 
                 <div class="col-md-6">
                   <label class="form-label small text-muted">Email Address</label>
-                  <input type="email" :value="user.email" class="form-control form-control-sm bg-light" readonly />
+                  <input type="email" :value="user.email" class="form-control form-control-sm bg-body-tertiary" readonly />
                 </div>
 
                 <div class="col-md-4">
@@ -186,12 +186,12 @@ const Profile = {
               <div v-else-if="user.role === 'COMPANY'" class="row g-3">
                 <div class="col-md-6">
                   <label class="form-label small text-muted">Company Name</label>
-                  <input type="text" :value="profileData.company_name" class="form-control form-control-sm bg-light" readonly />
+                  <input type="text" :value="profileData.company_name" class="form-control form-control-sm bg-body-tertiary" readonly />
                 </div>
                 
                 <div class="col-md-6">
                   <label class="form-label small text-muted">Recruiter Corporate Email</label>
-                  <input type="email" :value="user.email" class="form-control form-control-sm bg-light" readonly />
+                  <input type="email" :value="user.email" class="form-control form-control-sm bg-body-tertiary" readonly />
                 </div>
 
                 <div class="col-md-6">
@@ -238,7 +238,7 @@ const Profile = {
           </div>
           
           <div class="card-body">
-            <div class="p-3 bg-light mb-3 border">
+            <div class="p-3 bg-body-tertiary mb-3 border">
               <h6 class="mb-1">Current Resume</h6>
               <p class="mb-0 small">
                 <span v-if="profileData.resume_path">

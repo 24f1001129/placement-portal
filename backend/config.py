@@ -25,3 +25,8 @@ class Config:
     # Caching configuration
     CACHE_TYPE = "RedisCache"
     CACHE_REDIS_URL = os.environ.get('REDIS_URL')
+
+    # Payload Compression (Flask-Compress)
+    COMPRESS_MIMETYPES = ['text/html', 'text/css', 'application/json', 'application/javascript']
+    COMPRESS_LEVEL = 6
+    COMPRESS_MIN_SIZE = 500

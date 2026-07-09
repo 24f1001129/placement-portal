@@ -3,11 +3,27 @@ from functools import wraps
 from datetime import datetime
 import pytz
 import os
+import re
 from werkzeug.utils import secure_filename
 from backend.models import User, Student, Company, Drive, Position, Application, Placement, Interview, db
 from backend.models.database import format_indian_currency
 from backend.extensions import cache
 from backend.tasks import export_application_history, send_status_update_email
+from sqlalchemy.orm import joinedload
+from sqlalchemy import func
+
+def calculate_ats(required_skills_str, student_skills_str, student_exp_str):
+    if not required_skills_str:
+        return 0
+        
+    req_skills = [s.strip().lower() for s in re.split(r'[,|/]+', required_skills_str) if s.strip()]
+    if not req_skills:
+        return 0
+        
+    student_text = f"{student_skills_str or ''} {student_exp_str or ''}".lower()
+    
+    matches = sum(1 for req in req_skills if req in student_text)
+    return int((matches / len(req_skills)) * 100)
 
 student_bp = Blueprint('student', __name__, url_prefix='/student')
 
@@ -60,6 +76,7 @@ def get_student_drives():
                 'drive_name': d.drive_name,
                 'description': d.description,
                 'deadline': d.deadline.strftime('%d/%m/%Y %I:%M %p') if d.deadline else None,
+                'raw_deadline': d.deadline.isoformat() if d.deadline else None,
                 'eligible_year': d.eligible_year,
                 'positions': positions
             })
@@ -105,6 +122,11 @@ def apply_to_position():
         new_app.student_id = student.id
         new_app.position_id = pos.id
         new_app.status = 'APPLIED'
+        
+        # Calculate ATS Score
+        score = calculate_ats(pos.skills, student.skills, student.experience)
+        new_app.ats_score = score
+        
         db.session.add(new_app)
         db.session.commit()
         
@@ -128,7 +150,10 @@ def apply_to_position():
 def get_student_applications():
     student = Student.query.filter_by(user_id=session.get('user_id')).first()
     try:
-        applications = Application.query.filter_by(student_id=student.id).all()
+        applications = Application.query.filter_by(student_id=student.id)\
+            .options(joinedload(Application.interviews),
+                     joinedload(Application.position).joinedload(Position.drive).joinedload(Drive.company))\
+            .all()
         result = []
         for a in applications:
             # Gather interviews for this application
@@ -166,7 +191,9 @@ def get_student_applications():
 def get_student_interviews():
     student = Student.query.filter_by(user_id=session.get('user_id')).first()
     try:
-        interviews = Interview.query.join(Application).filter(Application.student_id == student.id).all()
+        interviews = Interview.query.join(Application).filter(Application.student_id == student.id)\
+            .options(joinedload(Interview.application).joinedload(Application.position).joinedload(Position.drive).joinedload(Drive.company))\
+            .all()
         result = []
         for i in interviews:
             result.append({
@@ -188,7 +215,9 @@ def get_student_interviews():
 def get_student_placements():
     student = Student.query.filter_by(user_id=session.get('user_id')).first()
     try:
-        placements = Placement.query.join(Application).filter(Application.student_id == student.id).all()
+        placements = Placement.query.join(Application).filter(Application.student_id == student.id)\
+            .options(joinedload(Placement.application).joinedload(Application.position).joinedload(Position.drive).joinedload(Drive.company))\
+            .all()
         result = []
         for p in placements:
             result.append({
@@ -280,7 +309,6 @@ def upload_resume():
 @student_bp.route('/export', methods=['POST'])
 @student_required
 def export_data():
-    from backend.tasks import export_application_history
     user_id = session.get('user_id')
     student = Student.query.filter_by(user_id=user_id).first()
     email = student.user.email
@@ -290,3 +318,59 @@ def export_data():
         return jsonify({'message': 'Data export started.', 'task_id': task.id}), 200
     except Exception as e:
         return jsonify({'error': 'Failed to trigger data export task.'}), 500
+
+@student_bp.route('/chart-data', methods=['GET'])
+@student_required
+def get_chart_data():
+    from sqlalchemy import func
+    student = Student.query.filter_by(user_id=session.get('user_id')).first()
+    try:
+        # 1. Application Status Summary
+        status_data = {
+            'Applied': 0,
+            'Shortlisted': 0,
+            'Interview': 0,
+            'Rejected': 0,
+            'Placed': 0
+        }
+        
+        apps = db.session.query(Application.status, func.count(Application.id)).\
+            filter(Application.student_id == student.id).\
+            group_by(Application.status).all()
+            
+        for status, count in apps:
+            s = status.upper()
+            if s == 'APPLIED': status_data['Applied'] = count
+            elif s == 'SHORTLISTED': status_data['Shortlisted'] = count
+            elif s == 'INTERVIEW': status_data['Interview'] = count
+            elif s == 'REJECTED': status_data['Rejected'] = count
+            elif s in ['PLACED', 'SELECTED']: status_data['Placed'] += count
+
+        # 2. Company Acceptance Rates (Global platform metric)
+        companies = Company.query.filter_by(approval_status='APPROVED').all()
+        acceptance_rates = []
+        for comp in companies:
+            total_apps = db.session.query(func.count(Application.id)).\
+                join(Position, Application.position_id == Position.id).\
+                join(Drive, Position.drive_id == Drive.id).\
+                filter(Drive.company_id == comp.id).scalar() or 0
+                
+            placed_apps = db.session.query(func.count(Application.id)).\
+                join(Position, Application.position_id == Position.id).\
+                join(Drive, Position.drive_id == Drive.id).\
+                filter(Drive.company_id == comp.id, Application.status.in_(['SELECTED', 'PLACED'])).scalar() or 0
+            
+            if total_apps > 0:
+                rate = round((placed_apps / total_apps) * 100, 1)
+                acceptance_rates.append({'name': comp.company_name, 'rate': rate, 'total': total_apps})
+                
+        # Sort by total apps to get the most popular, or just by rate. Let's do total apps.
+        acceptance_rates = sorted(acceptance_rates, key=lambda x: (x['total'], x['rate']), reverse=True)[:5]
+        
+        return jsonify({
+            'application_status': status_data,
+            'company_acceptance': acceptance_rates
+        }), 200
+    except Exception as e:
+        print(f"Error fetching student chart data: {e}")
+        return jsonify({'error': 'Failed to fetch chart data'}), 500

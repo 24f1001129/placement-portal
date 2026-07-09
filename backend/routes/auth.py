@@ -1,8 +1,10 @@
 from flask import Blueprint, request, jsonify, session, current_app
 import os
 from werkzeug.security import generate_password_hash, check_password_hash
-from backend.models import User, Student, Company, db
+from backend.models import User, Student, Company, Application, Drive, Position, db
 from backend.extensions import cache
+from celery.result import AsyncResult
+from sqlalchemy import func
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -297,7 +299,6 @@ def update_profile():
 
 @auth_bp.route('/tasks/<task_id>/status', methods=['GET'])
 def get_task_status(task_id):
-    from celery.result import AsyncResult
     try:
         task_result = AsyncResult(task_id)
         result = {
@@ -308,3 +309,25 @@ def get_task_status(task_id):
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'error': 'Failed to check task status.'}), 500
+
+@auth_bp.route('/public-stats', methods=['GET'])
+def get_public_stats():
+    try:
+        stats = cache.get('public_landing_stats_celery')
+        if not stats:
+            from backend.tasks import refresh_public_stats
+            # Force a synchronous refresh if cache is completely empty
+            refresh_public_stats()
+            stats = cache.get('public_landing_stats_celery')
+            
+        if not stats:
+            # Fallback if something went wrong
+            stats = {
+                'placed_students': 0, 'active_drives': 0, 'total_companies': 0,
+                'top_companies': [], 'top_students': []
+            }
+            
+        return jsonify(stats), 200
+    except Exception as e:
+        print(f"Error fetching public stats: {e}")
+        return jsonify({'error': 'Failed to fetch public stats'}), 500

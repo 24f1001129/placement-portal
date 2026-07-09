@@ -1,10 +1,11 @@
 from werkzeug.security import generate_password_hash
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from backend.config import Config
 from backend.models import User
 from backend.models.database import db
 from backend.extensions import mail, cache
 from backend.celery_app import celery_init_app
+from flask_compress import Compress
 
 def create_app():
     app = Flask(__name__, static_folder='frontend', static_url_path='')
@@ -22,6 +23,7 @@ def create_app():
     db.init_app(app)
     mail.init_app(app)
     cache.init_app(app)
+    Compress(app)
     celery_app = celery_init_app(app)
 
     @app.route('/')
@@ -34,6 +36,14 @@ def create_app():
     app.register_blueprint(admin_bp)
     app.register_blueprint(company_bp)
     app.register_blueprint(student_bp)
+
+    @app.after_request
+    def add_cache_control(response):
+        if request.path.startswith(('/auth', '/admin', '/company', '/student')):
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+        return response
 
     with app.app_context():
         
@@ -49,4 +59,6 @@ def create_app():
     return app
 
 app = create_app()
-app.run(port=5000, host='0.0.0.0', debug=True)
+
+if __name__ == '__main__':
+    app.run(port=5000, host='0.0.0.0', debug=True)

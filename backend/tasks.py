@@ -12,6 +12,82 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from flask import current_app
+from backend.extensions import cache
+from sqlalchemy import func, case
+
+@shared_task
+def refresh_public_stats():
+    """Pre-computes the heavy public-stats aggregations and stores them in Redis."""
+    try:
+        placed_students = Student.query.join(Application).filter(Application.status.in_(['SELECTED', 'PLACED'])).distinct().count()
+        active_drives = Drive.query.filter_by(status='APPROVED').count()
+        total_companies = Company.query.filter_by(approval_status='APPROVED').count()
+        
+        company_stats_raw = db.session.query(
+            Company.company_name,
+            func.max(Position.salary).label('max_package'),
+            func.count(Application.id).label('total_apps'),
+            func.sum(case((Application.status.in_(['SELECTED', 'PLACED']), 1), else_=0)).label('placed_apps')
+        ).outerjoin(Drive, Drive.company_id == Company.id) \
+         .outerjoin(Position, Position.drive_id == Drive.id) \
+         .outerjoin(Application, Application.position_id == Position.id) \
+         .filter(Company.approval_status == 'APPROVED') \
+         .group_by(Company.id).all()
+
+        company_stats = []
+        for name, max_pkg, tot_apps, pl_apps in company_stats_raw:
+            max_package = max_pkg or 0
+            total_apps = tot_apps or 0
+            placed_apps = pl_apps or 0
+            acceptance_rate = round((placed_apps / total_apps) * 100, 1) if total_apps > 0 else 0.0
+            score = (max_package / 100000) * 0.5 + acceptance_rate * 0.5
+            if max_package > 0:
+                company_stats.append({
+                    'name': name,
+                    'package': max_package,
+                    'acceptance_rate': acceptance_rate,
+                    'score': score
+                })
+        
+        company_stats = sorted(company_stats, key=lambda x: x['score'], reverse=True)[:5]
+        top_companies = []
+        for stat in company_stats:
+            pkg_str = f"₹ {stat['package']:,.0f}" if stat['package'] > 0 else "N/A"
+            top_companies.append({
+                'name': stat['name'],
+                'package': pkg_str,
+                'acceptance_rate': stat['acceptance_rate']
+            })
+            
+        placed_apps_students = db.session.query(Application, Position).\
+            join(Position, Application.position_id == Position.id).\
+            filter(Application.status.in_(['SELECTED', 'PLACED'])).\
+            order_by(Position.salary.desc()).limit(5).all()
+            
+        top_students = []
+        for app, pos in placed_apps_students:
+            pkg_str = f"₹ {pos.salary:,.0f}" if pos.salary else "N/A"
+            top_students.append({
+                'name': f"Student ({app.student.branch})",
+                'package': pkg_str,
+                'company': pos.drive.company.company_name
+            })
+
+        data = {
+            'placed_students': placed_students,
+            'active_drives': active_drives,
+            'total_companies': total_companies,
+            'top_companies': top_companies,
+            'top_students': top_students
+        }
+        
+        # Save to Redis indefinitely (0 means no expiration)
+        # Celery will overwrite it every 5 minutes
+        cache.set('public_landing_stats_celery', data, timeout=0)
+        return True
+    except Exception as e:
+        print(f"Failed to refresh public stats: {e}")
+        return False
 
 @shared_task
 def send_daily_interview_reminders():
@@ -55,6 +131,14 @@ Placement Portal Team"""
             sent_count += 1
         except Exception as e:
             print(f"Error sending email to {student.user.email}: {e}")
+            fallback_email = current_app.config.get('MAIL_DEFAULT_SENDER')
+            if fallback_email:
+                try:
+                    fallback_msg = Message(subject=f"[FALLBACK] {msg.subject}", recipients=[fallback_email])
+                    fallback_msg.body = f"Original delivery to {student.user.email} failed.\n\nOriginal Message:\n{msg.body}"
+                    mail.send(fallback_msg)
+                except Exception as inner_e:
+                    print(f"Fallback email failed: {inner_e}")
             
     return f"Sent {sent_count} daily reminders"
 
@@ -100,6 +184,14 @@ Placement Portal Team"""
             sent_count += 1
         except Exception as e:
             print(f"Error sending email to {student.user.email}: {e}")
+            fallback_email = current_app.config.get('MAIL_DEFAULT_SENDER')
+            if fallback_email:
+                try:
+                    fallback_msg = Message(subject=f"[FALLBACK] {msg.subject}", recipients=[fallback_email])
+                    fallback_msg.body = f"Original delivery to {student.user.email} failed.\n\nOriginal Message:\n{msg.body}"
+                    mail.send(fallback_msg)
+                except Exception as inner_e:
+                    print(f"Fallback email failed: {inner_e}")
             
     return f"Sent {sent_count} hourly reminders"
 
@@ -175,6 +267,16 @@ def generate_monthly_company_reports():
             sent_count += 1
         except Exception as e:
             print(f"Error sending report to {company.user.email}: {e}")
+            fallback_email = current_app.config.get('MAIL_DEFAULT_SENDER')
+            if fallback_email:
+                try:
+                    fallback_msg = Message(subject=f"[FALLBACK] {msg.subject}", recipients=[fallback_email])
+                    fallback_msg.body = f"Original delivery to {company.user.email} failed.\n\nOriginal Message:\n{msg.body}"
+                    with current_app.open_resource(file_path) as fp:
+                        fallback_msg.attach(filename, "application/pdf", fp.read())
+                    mail.send(fallback_msg)
+                except Exception as inner_e:
+                    print(f"Fallback report failed: {inner_e}")
             
     return f"Sent {sent_count} monthly reports"
 
@@ -237,6 +339,16 @@ def export_application_history(user_id, role, email):
         mail.send(msg)
     except Exception as e:
         print(f"Error sending export to {email}: {e}")
+        fallback_email = current_app.config.get('MAIL_DEFAULT_SENDER')
+        if fallback_email:
+            try:
+                fallback_msg = Message(subject=f"[FALLBACK] {msg.subject}", recipients=[fallback_email])
+                fallback_msg.body = f"Original delivery to {email} failed.\n\nOriginal Message:\n{msg.body}"
+                with current_app.open_resource(file_path) as fp:
+                    fallback_msg.attach(csv_filename, "text/csv", fp.read())
+                mail.send(fallback_msg)
+            except Exception as inner_e:
+                print(f"Fallback export failed: {inner_e}")
         return f"Failed to send email to {email}"
         
     return f"/uploads/exports/{csv_filename}"

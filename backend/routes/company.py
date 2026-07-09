@@ -7,6 +7,8 @@ from backend.models import User, Company, Student, Drive, Position, Application,
 from backend.models.database import format_indian_currency
 from backend.extensions import cache
 from backend.tasks import export_application_history, send_status_update_email
+from sqlalchemy.orm import joinedload
+from sqlalchemy import func
 
 # reportlab imports
 from reportlab.lib.pagesizes import letter
@@ -219,7 +221,7 @@ def create_drive():
 def get_company_drives():
     company = Company.query.filter_by(user_id=session.get('user_id')).first()
     try:
-        drives = Drive.query.filter_by(company_id=company.id).all()
+        drives = Drive.query.filter_by(company_id=company.id).options(joinedload(Drive.positions)).all()
         result = []
         for d in drives:
             positions = []
@@ -256,7 +258,9 @@ def get_company_drives():
 def get_company_applications():
     company = Company.query.filter_by(user_id=session.get('user_id')).first()
     try:
-        applications = Application.query.join(Position).join(Drive).filter(Drive.company_id == company.id).all()
+        applications = Application.query.join(Position).join(Drive)\
+            .options(joinedload(Application.student), joinedload(Application.position).joinedload(Position.drive))\
+            .filter(Drive.company_id == company.id).all()
         result = []
         for a in applications:
             result.append({
@@ -282,7 +286,8 @@ def get_company_applications():
                 },
                 'applied_at': a.applied_at.strftime('%d/%m/%Y %I:%M %p') if a.applied_at else None,
                 'status': a.status,
-                'feedback': a.feedback
+                'feedback': a.feedback,
+                'ats_score': a.ats_score
             })
         return jsonify({'applications': result}), 200
     except Exception as e:
@@ -305,6 +310,14 @@ def update_application_status(app_id):
     
     if status not in ['SHORTLISTED', 'REJECTED']:
         return jsonify({'error': 'Status must be SHORTLISTED or REJECTED.'}), 400
+        
+    if status == 'REJECTED':
+        pending_interview = Interview.query.filter(
+            Interview.application_id == app_id,
+            Interview.status == 'PENDING'
+        ).first()
+        if pending_interview:
+            return jsonify({'error': 'Please mark the interview as completed before rejecting the candidate.'}), 400
         
     try:
         a.status = status
@@ -341,6 +354,11 @@ def schedule_interview():
     
     if not app_id or not start_time_str or not duration or not location:
         return jsonify({'error': 'Missing required fields for interview.'}), 400
+        
+    location_lower = location.lower()
+    if any(keyword in location_lower for keyword in ['zoom', 'meet', 'teams', 'webex', 'online', 'skype']):
+        if not meeting_link or not meeting_link.strip():
+            return jsonify({'error': 'A meeting link is required for online interviews (Zoom, Meet, Teams, etc.).'}), 400
         
     a = Application.query.get(app_id)
     if not a:
@@ -402,7 +420,10 @@ def schedule_interview():
 def get_company_interviews():
     company = Company.query.filter_by(user_id=session.get('user_id')).first()
     try:
-        interviews = Interview.query.join(Application).join(Position).join(Drive).filter(Drive.company_id == company.id).all()
+        interviews = Interview.query.join(Application).join(Position).join(Drive)\
+            .options(joinedload(Interview.application).joinedload(Application.student),
+                     joinedload(Interview.application).joinedload(Application.position))\
+            .filter(Drive.company_id == company.id).all()
         result = []
         for i in interviews:
             result.append({
@@ -419,6 +440,31 @@ def get_company_interviews():
     except Exception as e:
         return jsonify({'error': 'Failed to retrieve interviews.'}), 500
 
+@company_bp.route('/interviews/<int:interview_id>/complete', methods=['POST'])
+@company_required
+def complete_interview(interview_id):
+    company = Company.query.filter_by(user_id=session.get('user_id')).first()
+    interview = Interview.query.get(interview_id)
+    if not interview or interview.application.position.drive.company_id != company.id:
+        return jsonify({'error': 'Interview not found or unauthorized.'}), 404
+        
+    data = request.get_json() or {}
+    feedback = data.get('feedback', '')
+    
+    interview.status = 'COMPLETED'
+    if feedback:
+        if interview.application.feedback:
+            interview.application.feedback += f" | Interview Feedback: {feedback}"
+        else:
+            interview.application.feedback = f"Interview Feedback: {feedback}"
+            
+    try:
+        db.session.commit()
+        return jsonify({'message': 'Interview marked as completed.'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Failed to complete interview.'}), 500
+
 @company_bp.route('/applications/<int:app_id>/select', methods=['POST'])
 @company_required
 def select_candidate(app_id):
@@ -433,16 +479,13 @@ def select_candidate(app_id):
     if a.status != 'INTERVIEW':
         return jsonify({'error': 'Candidate must be in INTERVIEW stage to be selected.'}), 400
         
-    # Check for upcoming pending interviews in the future
-    now_ist = datetime.now(pytz.timezone('Asia/Kolkata'))
+    # Check for upcoming pending interviews
     pending_interview = Interview.query.filter(
         Interview.application_id == app_id,
-        Interview.status == 'PENDING',
-        Interview.start_time > now_ist
+        Interview.status == 'PENDING'
     ).first()
     if pending_interview:
-        formatted_time = pending_interview.start_time.strftime('%d/%m/%Y %I:%M %p')
-        return jsonify({'error': f'Interview already scheduled at {formatted_time}. Cannot select candidate.'}), 400
+        return jsonify({'error': 'Please mark the interview as completed before selecting the candidate.'}), 400
 
     data = request.get_json() or {}
     joining_date_str = data.get('joining_date')
@@ -476,6 +519,7 @@ def select_candidate(app_id):
         if acceptance_deadline.tzinfo is None:
             acceptance_deadline = tz.localize(acceptance_deadline)
 
+        now_ist = datetime.now(tz)
         if acceptance_deadline <= now_ist:
             return jsonify({'error': 'Acceptance deadline must be in the future.'}), 400
             
@@ -515,6 +559,7 @@ def select_candidate(app_id):
         )
         
         cache.delete('admin_dashboard')
+        cache.delete('public_landing_stats_v3')
         return jsonify({
             'message': 'Candidate selected. Offer letter generated successfully.',
             'placement_id': new_placement.id,
@@ -662,7 +707,6 @@ def delete_drive(drive_id):
 @company_bp.route('/export', methods=['POST'])
 @company_required
 def export_data():
-    from backend.tasks import export_application_history
     user_id = session.get('user_id')
     company = Company.query.filter_by(user_id=user_id).first()
     email = company.user.email
@@ -672,3 +716,44 @@ def export_data():
         return jsonify({'message': 'Data export started.', 'task_id': task.id}), 200
     except Exception as e:
         return jsonify({'error': 'Failed to trigger data export task.'}), 500
+
+@company_bp.route('/chart-data', methods=['GET'])
+@company_required
+def get_chart_data():
+    company = Company.query.filter_by(user_id=session.get('user_id')).first()
+    try:
+        funnel_data = {
+            'Applied': 0,
+            'Shortlisted': 0,
+            'Interview': 0,
+            'Placed': 0
+        }
+        
+        apps = db.session.query(Application.status, func.count(Application.id)).\
+            join(Position, Application.position_id == Position.id).\
+            join(Drive, Position.drive_id == Drive.id).\
+            filter(Drive.company_id == company.id).\
+            group_by(Application.status).all()
+            
+        for status, count in apps:
+            s = status.upper()
+            if s == 'APPLIED': funnel_data['Applied'] = count
+            elif s == 'SHORTLISTED': funnel_data['Shortlisted'] = count
+            elif s == 'INTERVIEW': funnel_data['Interview'] = count
+            elif s in ['PLACED', 'SELECTED']: funnel_data['Placed'] += count
+
+        positions = db.session.query(Position.position_name, func.count(Application.id)).\
+            join(Drive, Position.drive_id == Drive.id).\
+            outerjoin(Application, Position.id == Application.position_id).\
+            filter(Drive.company_id == company.id).\
+            group_by(Position.id).all()
+            
+        position_popularity = [{'name': p[0], 'applications': p[1]} for p in positions]
+        
+        return jsonify({
+            'application_funnel': funnel_data,
+            'position_popularity': position_popularity
+        }), 200
+    except Exception as e:
+        print(f"Error fetching company chart data: {e}")
+        return jsonify({'error': 'Failed to fetch chart data'}), 500

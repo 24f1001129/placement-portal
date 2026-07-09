@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify, session
 from functools import wraps
 from backend.models import User, Student, Company, Drive, Position, Application, db
 from backend.extensions import cache
+from backend.tasks import generate_monthly_company_reports
+from sqlalchemy import func
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -24,7 +26,7 @@ def get_stats():
         total_applications = Application.query.count()
         
         # Additional statistics
-        placed_students = Student.query.join(Application).filter(Application.status == 'SELECTED').distinct().count()
+        placed_students = Student.query.join(Application).filter(Application.status == 'PLACED').distinct().count()
         pending_companies = Company.query.filter_by(approval_status='PENDING').count()
         pending_drives = Drive.query.filter_by(status='PENDING').count()
 
@@ -108,6 +110,7 @@ def toggle_company_blacklist(company_id):
         company.user.is_active = not company.is_blacklisted
         db.session.commit()
         
+        cache.clear()
         action = 'blacklisted' if company.is_blacklisted else 'removed from blacklist'
         return jsonify({'message': f'Company successfully {action}'}), 200
     except Exception as e:
@@ -207,6 +210,7 @@ def update_drive_status(drive_id):
     try:
         drive.status = status
         db.session.commit()
+        cache.clear()
         return jsonify({'message': f'Drive status updated to {status}'}), 200
     except Exception as e:
         db.session.rollback()
@@ -234,10 +238,52 @@ def get_applications():
 
 @admin_bp.route('/reports/trigger', methods=['POST'])
 @admin_required
-def trigger_monthly_reports():
-    from backend.tasks import generate_monthly_company_reports
+def generate_reports():
     try:
         task = generate_monthly_company_reports.delay()
         return jsonify({'message': 'Monthly reports generation triggered.', 'task_id': task.id}), 200
     except Exception as e:
         return jsonify({'error': 'Failed to trigger report generation task.'}), 500
+
+@admin_bp.route('/chart-data', methods=['GET'])
+@admin_required
+@cache.cached(timeout=60, key_prefix='admin_chart_data')
+def get_admin_chart_data():
+    try:
+        # Placement Status
+        total_students = Student.query.count()
+        placed_students = Student.query.join(Application).filter(Application.status.in_(['SELECTED', 'PLACED'])).distinct().count()
+        unplaced_students = total_students - placed_students
+        
+        # Top Companies by Applications
+        top_companies_query = db.session.query(
+            Company.company_name, 
+            func.count(Application.id).label('app_count')
+        ).select_from(Company)\
+         .join(Drive, Company.id == Drive.company_id)\
+         .join(Position, Drive.id == Position.drive_id)\
+         .join(Application, Position.id == Application.position_id)\
+         .group_by(Company.id)\
+         .order_by(func.count(Application.id).desc())\
+         .limit(5).all()
+         
+        top_companies = [{'name': row[0], 'applications': row[1]} for row in top_companies_query]
+        
+        # Companies vs Drives
+        total_companies = Company.query.filter_by(approval_status='APPROVED').count()
+        total_drives = Drive.query.filter_by(status='APPROVED').count()
+        
+        return jsonify({
+            'placement_status': {
+                'placed': placed_students,
+                'unplaced': unplaced_students
+            },
+            'top_companies': top_companies,
+            'companies_vs_drives': {
+                'companies': total_companies,
+                'drives': total_drives
+            }
+        }), 200
+    except Exception as e:
+        print(f"Error generating admin chart data: {e}")
+        return jsonify({'error': 'Failed to fetch chart data'}), 500

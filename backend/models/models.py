@@ -25,7 +25,7 @@ class Company(db.Model):
     website = db.Column(db.String(128), nullable=False, unique=True)
     description = db.Column(db.String(255), nullable=False)
     hr_contact = db.Column(db.String(128), nullable=False, unique=True)
-    approval_status = db.Column(db.String(16), nullable=False, default='PENDING')
+    approval_status = db.Column(db.String(16), nullable=False, default='PENDING', index=True)
     is_blacklisted = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
 
@@ -74,11 +74,11 @@ class Student(db.Model):
 class Drive(db.Model):
     __tablename__ = 'drives'
     id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey('companies.id', ondelete='CASCADE'), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey('companies.id', ondelete='CASCADE'), nullable=False, index=True)
     drive_name = db.Column(db.String(64), nullable=False)
     description = db.Column(db.String(128), nullable=False)
     deadline = db.Column(db.DateTime, nullable=False)
-    status = db.Column(db.String(16), nullable=False, default='PENDING')
+    status = db.Column(db.String(16), nullable=False, default='PENDING', index=True)
     eligible_year = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
     @validates("deadline", "eligible_year")
@@ -104,7 +104,7 @@ class Drive(db.Model):
 class Position(db.Model):
     __tablename__ = 'positions'
     id = db.Column(db.Integer, primary_key=True)
-    drive_id = db.Column(db.Integer, db.ForeignKey('drives.id', ondelete='CASCADE'), nullable=False)
+    drive_id = db.Column(db.Integer, db.ForeignKey('drives.id', ondelete='CASCADE'), nullable=False, index=True)
     position_name = db.Column(db.String(64), nullable=False)
     description = db.Column(db.String(256), nullable=False)
     min_cgpa = db.Column(db.Float, nullable=False)
@@ -126,11 +126,12 @@ class Position(db.Model):
 class Application(db.Model):
     __tablename__ = 'applications'
     id = db.Column(db.Integer, primary_key=True)
-    student_id = db.Column(db.Integer, db.ForeignKey('students.id', ondelete='CASCADE'), nullable=False)
-    position_id = db.Column(db.Integer, db.ForeignKey('positions.id', ondelete='CASCADE'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id', ondelete='CASCADE'), nullable=False, index=True)
+    position_id = db.Column(db.Integer, db.ForeignKey('positions.id', ondelete='CASCADE'), nullable=False, index=True)
     applied_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
-    status = db.Column(db.String(16), nullable=False, default='DRAFT')
+    status = db.Column(db.String(16), nullable=False, default='DRAFT', index=True)
     feedback = db.Column(db.String(255), nullable=True)
+    ats_score = db.Column(db.Integer, nullable=True, default=0)
 
 
 class Placement(db.Model):
@@ -140,7 +141,7 @@ class Placement(db.Model):
     joining_date = db.Column(db.DateTime, nullable=False)
     acceptance_deadline = db.Column(db.DateTime, nullable=False)
     offer_letter_path = db.Column(db.String(256), nullable=False)
-    status = db.Column(db.String(16), nullable=False, default='PENDING')
+    status = db.Column(db.String(16), nullable=False, default='PENDING', index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
     @validates("joining_date", "acceptance_deadline")
     def validate(self, key, value):
@@ -171,7 +172,7 @@ class Placement(db.Model):
 class Notification(db.Model):
     __tablename__ = 'notifications'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     message = db.Column(db.String(256), nullable=False)
     is_read = db.Column(db.Boolean, nullable=False, default=False)
     notification_type = db.Column(db.String(16), nullable=False)
@@ -182,11 +183,11 @@ class Notification(db.Model):
 class Interview(db.Model):
     __tablename__ = 'interviews'
     id = db.Column(db.Integer, primary_key=True)
-    application_id = db.Column(db.Integer, db.ForeignKey('applications.id', ondelete='CASCADE'), nullable=False)
+    application_id = db.Column(db.Integer, db.ForeignKey('applications.id', ondelete='CASCADE'), nullable=False, index=True)
     start_time = db.Column(db.DateTime, nullable=False)
     duration = db.Column(db.Integer, nullable=False)
     location = db.Column(db.String(32), nullable=False)
-    status = db.Column(db.String(16), nullable=False, default='PENDING')
+    status = db.Column(db.String(16), nullable=False, default='PENDING', index=True)
     meeting_link = db.Column(db.String(256), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Kolkata')))
     @validates("start_time", "duration")

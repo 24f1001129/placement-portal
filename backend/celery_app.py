@@ -1,4 +1,5 @@
 from celery import Celery, Task
+from celery.schedules import crontab
 from flask import Flask
 
 def celery_init_app(app: Flask) -> Celery:
@@ -11,9 +12,6 @@ def celery_init_app(app: Flask) -> Celery:
     celery_app.config_from_object(app.config["CELERY"])
     celery_app.set_default()
     app.extensions["celery"] = celery_app
-    
-    from celery.schedules import crontab
-    
     celery_app.conf.beat_schedule = {
         'daily-interview-reminders': {
             'task': 'backend.tasks.send_daily_interview_reminders',
@@ -26,6 +24,10 @@ def celery_init_app(app: Flask) -> Celery:
         'monthly-placement-reports': {
             'task': 'backend.tasks.generate_monthly_company_reports',
             'schedule': crontab(day_of_month='1', hour=0, minute=0),
+        },
+        'refresh-public-stats-5min': {
+            'task': 'backend.tasks.refresh_public_stats',
+            'schedule': crontab(minute='*/5'),
         },
     }
     celery_app.conf.timezone = 'Asia/Kolkata'

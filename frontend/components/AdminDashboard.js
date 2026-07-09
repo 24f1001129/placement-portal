@@ -7,7 +7,7 @@ export default {
   emits: ['navigate'],
   data() {
     return {
-      activeTab: 'overview', // overview, companies, students, drives, applications
+      activeTab: 'overview',
       stats: {
         total_students: 0,
         total_companies: 0,
@@ -23,6 +23,8 @@ export default {
       applications: [],
       companySearch: '',
       studentSearch: '',
+      chartData: null,
+      charts: {},
       error: '',
       success: ''
     }
@@ -38,6 +40,7 @@ export default {
       else if (route === '/admin/students') this.switchTab('students');
       else if (route === '/admin/drives') this.switchTab('drives');
       else if (route === '/admin/applications') this.switchTab('applications');
+      else if (route === '/admin/analytics') this.switchTab('analytics');
       else this.switchTab('overview');
     },
     handleNav(route) {
@@ -175,11 +178,56 @@ export default {
     switchTab(tab) {
       this.activeTab = tab;
       this.clearMessages();
-      if (tab === 'overview') this.fetchStats();
-      else if (tab === 'companies') this.fetchCompanies();
-      else if (tab === 'students') this.fetchStudents();
-      else if (tab === 'drives') this.fetchDrives();
-      else if (tab === 'applications') this.fetchApplications();
+      this.refreshData();
+    },
+    refreshData() {
+      if (this.activeTab === 'overview') this.fetchStats();
+      else if (this.activeTab === 'companies') this.fetchCompanies();
+      else if (this.activeTab === 'students') this.fetchStudents();
+      else if (this.activeTab === 'drives') this.fetchDrives();
+      else if (this.activeTab === 'applications') this.fetchApplications();
+      else if (this.activeTab === 'analytics') this.fetchChartData();
+    },
+    async fetchChartData() {
+      try {
+        const res = await fetch('/admin/chart-data');
+        if (res.ok) {
+          this.chartData = await res.json();
+          this.$nextTick(() => this.renderCharts());
+        }
+      } catch (err) {
+        console.error('Error fetching chart data:', err);
+      }
+    },
+    renderCharts() {
+      if (!this.chartData) return;
+      const textColor = getComputedStyle(document.documentElement).getPropertyValue('--bs-body-color').trim() || '#dee2e6';
+
+      if (this.charts.placement) this.charts.placement.destroy();
+      const ctx1 = document.getElementById('adminPlacementChart');
+      if (ctx1) {
+        this.charts.placement = new Chart(ctx1, {
+          type: 'doughnut',
+          data: {
+            labels: ['Placed', 'Unplaced'],
+            datasets: [{ data: [this.chartData.placement_status.placed, this.chartData.placement_status.unplaced], backgroundColor: ['#198754', '#6c757d'] }]
+          },
+          options: { plugins: { legend: { labels: { color: textColor } } } }
+        });
+      }
+
+      if (this.charts.topCompanies) this.charts.topCompanies.destroy();
+      const ctx2 = document.getElementById('adminTopCompaniesChart');
+      if (ctx2) {
+        this.charts.topCompanies = new Chart(ctx2, {
+          type: 'bar',
+          data: {
+            labels: this.chartData.top_companies.map(c => c.name),
+            datasets: [{ label: 'Applications', data: this.chartData.top_companies.map(c => c.applications), backgroundColor: '#0d6efd' }]
+          },
+          options: { scales: { x: { ticks: { color: textColor } }, y: { ticks: { color: textColor } } }, plugins: { legend: { labels: { color: textColor } } } }
+        });
+      }
     },
     async triggerMonthlyReports() {
       this.clearMessages();
@@ -194,10 +242,31 @@ export default {
       } catch (err) {
         this.error = 'Network error triggering reports.';
       }
+    },
+    getStatusBadgeClass(status) {
+      switch (status) {
+        case 'PLACED':
+        case 'ACCEPTED':
+          return 'bg-success text-white';
+        case 'SHORTLISTED':
+        case 'INTERVIEW':
+          return 'bg-warning text-dark';
+        case 'REJECTED':
+          return 'bg-danger text-white';
+        default:
+          return 'bg-secondary text-white';
+      }
     }
   },
   created() {
     this.syncTabWithRoute(this.currentRoute);
+    this.pollingInterval = setInterval(() => {
+      this.refreshData();
+    }, 60000);
+  },
+  unmounted() {
+    if (this.pollingInterval) clearInterval(this.pollingInterval);
+    Object.values(this.charts).forEach(c => c && c.destroy());
   },
   template: `
     <div class="container my-4">
@@ -207,7 +276,7 @@ export default {
             <h2>Placement Cell Admin Dashboard</h2>
             <p class="text-muted small">Manage students, company approvals, placement drives, and track job applications.</p>
           </div>
-          <button class="btn btn-sm btn-outline-dark" @click="triggerMonthlyReports()">
+          <button class="btn btn-sm btn-outline-secondary" @click="triggerMonthlyReports()">
             Generate Monthly Reports
           </button>
         </div>
@@ -229,6 +298,9 @@ export default {
         </li>
         <li class="nav-item">
           <button class="nav-link" :class="{ active: activeTab === 'applications' }" @click="switchTab('applications')">Applications</button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" :class="{ active: activeTab === 'analytics' }" @click="switchTab('analytics')">Analytics</button>
         </li>
       </ul>
 
@@ -470,7 +542,7 @@ export default {
                 <td>{{ a.position_name }}</td>
                 <td>{{ a.applied_at }}</td>
                 <td>
-                  <span class="badge bg-secondary">{{ a.status }}</span>
+                  <span class="badge" :class="getStatusBadgeClass(a.status)">{{ a.status }}</span>
                 </td>
               </tr>
               <tr v-if="applications.length === 0">
@@ -478,6 +550,24 @@ export default {
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Tab Content: Analytics -->
+      <div v-else-if="activeTab === 'analytics'">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="card p-3 border">
+              <h6 class="text-muted small mb-3">Placement Status</h6>
+              <canvas id="adminPlacementChart" height="250"></canvas>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card p-3 border">
+              <h6 class="text-muted small mb-3">Top Companies by Applications</h6>
+              <canvas id="adminTopCompaniesChart" height="250"></canvas>
+            </div>
+          </div>
         </div>
       </div>
     </div>
